@@ -77,7 +77,7 @@
         top: 10px;
         right: 10px;
         width: 280px;
-        max-height: calc(100vh - 20px);
+        max-height: 50vh;
         color: #ccc;
         font-family: monospace;
         font-size: 11px;
@@ -110,11 +110,27 @@
       #game-log .log-roll { color: #666; font-size: 10px; }
       #game-log .log-info { color: #aaa; }
 
+      /* Respawn button */
+      #btn-respawn {
+        position: fixed;
+        bottom: 60px;
+        left: 10px;
+        z-index: 10;
+        padding: 6px 14px;
+        cursor: pointer;
+        font-family: monospace;
+        background: #333;
+        color: #fff;
+        border: 1px solid #666;
+        border-radius: 4px;
+      }
+      #btn-respawn:hover { background: #555; }
+
       /* Drive gauges */
       #drive-gauges {
         position: fixed;
         bottom: 10px;
-        right: 300px;
+        right: 10px;
         color: #fff;
         font-family: monospace;
         font-size: 11px;
@@ -214,11 +230,23 @@
         text-align: right;
       }
 
+      /* Version display */
+      #version-display {
+        position: fixed;
+        bottom: 4px;
+        right: 4px;
+        color: rgba(255,255,255,0.2);
+        font-family: monospace;
+        font-size: 9px;
+        pointer-events: none;
+        z-index: 10;
+      }
+
       /* Zoom controls */
       #zoom-controls {
         position: fixed;
-        top: 10px;
-        left: 150px;
+        top: 70px;
+        left: 10px;
         display: flex;
         align-items: center;
         gap: 6px;
@@ -351,7 +379,7 @@
       <div id="turn-display"></div>
     </div>
     <div id="info-panel"></div>
-    <button id="btn-respawn" style="position:fixed;bottom:10px;left:200px;z-index:10;padding:6px 14px;cursor:pointer;font-family:monospace;background:#333;color:#fff;border:1px solid #666;border-radius:4px;">Respawn</button>
+    <button id="btn-respawn">Respawn</button>
     <div id="game-log">
       <div class="log-title">Game Log</div>
       <div id="log-entries"></div>
@@ -383,6 +411,7 @@
       <button id="btn-fire-projectile">Gun [20]</button>
       <button id="btn-end-turn">End Turn [Space]</button>
     </div>
+    <div id="version-display"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

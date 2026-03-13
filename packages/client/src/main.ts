@@ -324,6 +324,12 @@ async function main(): Promise<void> {
   // Connect to server
   network.connect();
 
+  // Set version display
+  const versionEl = document.getElementById("version-display");
+  if (versionEl) {
+    versionEl.textContent = __APP_VERSION__;
+  }
+
   // Game loop: send input, tick animations, update gauges and ghost preview every frame
   renderer.app.ticker.add((ticker) => {
     input.tick();

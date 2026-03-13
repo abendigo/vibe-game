@@ -32,6 +32,7 @@ packages/
     network.ts      — WebSocket client wrapper with auto-reconnect
     input.ts        — tap-to-set DriveState (explore + combat), spacebar combat confirm
     input-utils.ts  — pure input logic (driveStateChanged, nearest player, combat check)
+    vite-env.d.ts   — global type declarations (__APP_VERSION__)
 ```
 
 ## Commands
@@ -67,7 +68,9 @@ packages/
 
 - **Serialization**: `GameState.players` is a `Map<string, Player>` — use `serializeGameState`/`deserializeGameState` helpers for network transfer (Map doesn't JSON.stringify natively).
 
-- **Rendering**: Pixi.js v8 (async `Application.init()`). All visuals are placeholder shapes (rectangles for cars, grid for ground). Minimap in top-right corner shows zoomed-out view of full map with player dots and viewport indicator. Info panel in bottom-left shows local player stats. Game log panel on right side shows events in real-time.
+- **Rendering**: Pixi.js v8 (async `Application.init()`). All visuals are placeholder shapes (rectangles for cars, grid for ground). Minimap in top-right corner shows zoomed-out view of full map with player dots and viewport indicator. Info panel in bottom-left shows local player stats. Game log panel on right side (max 50vh height) shows events in real-time. Drive gauges in bottom-right. Zoom controls below ui-overlay (top-left). Version SHA displayed as tiny dim text in bottom-right corner.
+
+- **Version display**: `__APP_VERSION__` injected at build time via Vite `define`. Reads `VITE_APP_VERSION` env var (set in Docker/CI), falls back to `git rev-parse --short HEAD`, then `"dev"`. Displayed in `#version-display` element.
 
 - **Movement model**: Persistent steering angle physics. Client sends `DriveState` (targetSpeed + steeringAngle), server runs `tickPhysics()` each tick. Speed is instant (no acceleration curve), steering angle is persistent (no auto-centering). Turn rate proportional to angle. Physics constants in `PHYSICS` export from shared types.
 

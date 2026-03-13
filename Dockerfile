@@ -1,6 +1,9 @@
 # ── Build stage ──
 FROM node:22-slim AS build
 
+ARG APP_VERSION=unknown
+ENV VITE_APP_VERSION=$APP_VERSION
+
 WORKDIR /app
 
 # Copy package files first for layer caching
