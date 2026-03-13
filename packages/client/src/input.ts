@@ -21,9 +21,9 @@ export class InputHandler {
   private combatPreview: CombatPreview | null = null;
   private isAnimating = false;
 
-  /** Combat input limits -- reset each turn */
-  private combatSpeedStepsUsed = 0;
-  private combatSteeringStepsUsed = 0;
+  /** Combat input history -- opposing inputs undo instead of consuming budget */
+  private combatSpeedInputs: Array<"up" | "down"> = [];
+  private combatSteeringInputs: Array<"left" | "right"> = [];
   /** Snapshot of driveState at start of turn, for Escape to restore */
   private combatTurnStartDriveState: DriveState = { targetSpeed: 0, steeringAngle: 0 };
 
@@ -58,55 +58,43 @@ export class InputHandler {
 
       // Speed controls
       if (key === "w" || key === "arrowup") {
-        if (inCombatTurn && (this.combatSpeedStepsUsed >= InputHandler.COMBAT_MAX_SPEED_STEPS)) {
-          // blocked
+        if (inCombatTurn) {
+          this.combatSpeedInput("up");
         } else {
-          if (inCombatTurn) this.combatSpeedStepsUsed++;
           this.driveState.targetSpeed = Math.min(this.driveState.targetSpeed + 1, this.maxSpeed);
-          if (!inCombatTurn) {
-            this.sendDriveState();
-          }
+          this.sendDriveState();
         }
       }
       if (key === "s" || key === "arrowdown") {
-        if (inCombatTurn && (this.combatSpeedStepsUsed >= InputHandler.COMBAT_MAX_SPEED_STEPS)) {
-          // blocked
+        if (inCombatTurn) {
+          this.combatSpeedInput("down");
         } else {
-          if (inCombatTurn) this.combatSpeedStepsUsed++;
           this.driveState.targetSpeed = Math.max(this.driveState.targetSpeed - 1, 0);
-          if (!inCombatTurn) {
-            this.sendDriveState();
-          }
+          this.sendDriveState();
         }
       }
 
       // Steering controls -- persistent steering angle
       if (key === "a" || key === "arrowleft") {
-        if (inCombatTurn && (this.combatSteeringStepsUsed >= InputHandler.COMBAT_MAX_STEERING_STEPS)) {
-          // blocked
+        if (inCombatTurn) {
+          this.combatSteeringInput("left");
         } else {
-          if (inCombatTurn) this.combatSteeringStepsUsed++;
           this.driveState.steeringAngle = Math.max(
             this.driveState.steeringAngle - PHYSICS.STEERING_STEP,
             -PHYSICS.MAX_STEERING_ANGLE
           );
-          if (!inCombatTurn) {
-            this.sendDriveState();
-          }
+          this.sendDriveState();
         }
       }
       if (key === "d" || key === "arrowright") {
-        if (inCombatTurn && (this.combatSteeringStepsUsed >= InputHandler.COMBAT_MAX_STEERING_STEPS)) {
-          // blocked
+        if (inCombatTurn) {
+          this.combatSteeringInput("right");
         } else {
-          if (inCombatTurn) this.combatSteeringStepsUsed++;
           this.driveState.steeringAngle = Math.min(
             this.driveState.steeringAngle + PHYSICS.STEERING_STEP,
             PHYSICS.MAX_STEERING_ANGLE
           );
-          if (!inCombatTurn) {
-            this.sendDriveState();
-          }
+          this.sendDriveState();
         }
       }
 
@@ -132,8 +120,8 @@ export class InputHandler {
       // Escape: undo movement planning — restore driveState to start-of-turn values
       if (e.key === "Escape" && this.isInCombat && this.isMyTurn) {
         this.driveState = { ...this.combatTurnStartDriveState };
-        this.combatSpeedStepsUsed = 0;
-        this.combatSteeringStepsUsed = 0;
+        this.combatSpeedInputs = [];
+        this.combatSteeringInputs = [];
         this.combatPreview = null;
         this.renderer.updateMovementPreview(null, 0);
       }
@@ -197,6 +185,40 @@ export class InputHandler {
     }
   }
 
+  /** Combat speed input: opposing direction undoes last input instead of consuming budget */
+  private combatSpeedInput(dir: "up" | "down"): void {
+    const opposite = dir === "up" ? "down" : "up";
+    const last = this.combatSpeedInputs[this.combatSpeedInputs.length - 1];
+    if (last === opposite) {
+      // Undo: pop the last input and reverse its effect
+      this.combatSpeedInputs.pop();
+      this.driveState.targetSpeed += opposite === "up" ? -1 : 1;
+    } else if (this.combatSpeedInputs.length < InputHandler.COMBAT_MAX_SPEED_STEPS) {
+      this.combatSpeedInputs.push(dir);
+      this.driveState.targetSpeed = dir === "up"
+        ? Math.min(this.driveState.targetSpeed + 1, this.maxSpeed)
+        : Math.max(this.driveState.targetSpeed - 1, 0);
+    }
+  }
+
+  /** Combat steering input: opposing direction undoes last input instead of consuming budget */
+  private combatSteeringInput(dir: "left" | "right"): void {
+    const opposite = dir === "left" ? "right" : "left";
+    const last = this.combatSteeringInputs[this.combatSteeringInputs.length - 1];
+    if (last === opposite) {
+      // Undo: pop the last input and reverse its effect
+      this.combatSteeringInputs.pop();
+      this.driveState.steeringAngle += opposite === "left"
+        ? PHYSICS.STEERING_STEP   // undo a left → add back
+        : -PHYSICS.STEERING_STEP; // undo a right → subtract back
+    } else if (this.combatSteeringInputs.length < InputHandler.COMBAT_MAX_STEERING_STEPS) {
+      this.combatSteeringInputs.push(dir);
+      this.driveState.steeringAngle = dir === "left"
+        ? Math.max(this.driveState.steeringAngle - PHYSICS.STEERING_STEP, -PHYSICS.MAX_STEERING_ANGLE)
+        : Math.min(this.driveState.steeringAngle + PHYSICS.STEERING_STEP, PHYSICS.MAX_STEERING_ANGLE);
+    }
+  }
+
   /** Commit the current movement preview, then execute a follow-up action.
    *  If no preview exists but the car has speed, compute a coast preview first. */
   private commitMovementThen(action: () => void): void {
@@ -250,8 +272,8 @@ export class InputHandler {
 
   /** Reset combat input limits for a new turn */
   resetCombatTurn(): void {
-    this.combatSpeedStepsUsed = 0;
-    this.combatSteeringStepsUsed = 0;
+    this.combatSpeedInputs = [];
+    this.combatSteeringInputs = [];
     this.combatTurnStartDriveState = { ...this.driveState };
     this.combatPreview = null;
     this.renderer.updateMovementPreview(null, 0);
