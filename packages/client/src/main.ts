@@ -88,6 +88,9 @@ async function main(): Promise<void> {
   }
 
   function showLogin(errorMsg?: string): void {
+    if (!loginScreen.parentNode) {
+      document.body.appendChild(loginScreen);
+    }
     loginScreen.classList.remove("hidden");
     loginError.textContent = errorMsg ?? "";
     loginStatus.textContent = "";
@@ -100,7 +103,7 @@ async function main(): Promise<void> {
   }
 
   function hideLogin(): void {
-    loginScreen.classList.add("hidden");
+    loginScreen.remove();
   }
 
   loginForm.addEventListener("submit", (e) => {
