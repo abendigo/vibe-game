@@ -59,8 +59,11 @@ packages/
 - **Authentication**: Name + password auth with scrypt hashing. Server auto-registers new names, verifies password for existing ones. Session tokens (in-memory) allow reconnect without re-entering password. Client stores token in `localStorage`. Duplicate connection prevention per player name.
 
 ## Maintenance Rules
+
 - **Keep CLAUDE.md up to date**: After every significant change (new files, new systems, architectural changes, new dependencies, changed commands), update this file to reflect the current state of the project. This includes updating the project structure, architecture decisions, and any other relevant sections.
+
 - **Ask before guessing**: If a request is ambiguous or unclear, ask for clarification before starting work. Don't attempt an implementation based on assumptions — get a clearer understanding first.
+
 - **Git discipline**: Before making any code changes, check `git status` for uncommitted changes. If there are any, stop and tell the user — do not proceed. After completing changes, create a git commit with a descriptive message explaining what was done.
 
 ## Conventions
