@@ -24,7 +24,6 @@ export class InputHandler {
   /** Combat input limits -- reset each turn */
   private combatSpeedStepsUsed = 0;
   private combatSteeringStepsUsed = 0;
-  private combatMovementDone = false;
   /** Snapshot of driveState at start of turn, for Escape to restore */
   private combatTurnStartDriveState: DriveState = { targetSpeed: 0, steeringAngle: 0 };
 
@@ -59,7 +58,7 @@ export class InputHandler {
 
       // Speed controls
       if (key === "w" || key === "arrowup") {
-        if (inCombatTurn && (this.combatMovementDone || this.combatSpeedStepsUsed >= InputHandler.COMBAT_MAX_SPEED_STEPS)) {
+        if (inCombatTurn && (this.combatSpeedStepsUsed >= InputHandler.COMBAT_MAX_SPEED_STEPS)) {
           // blocked
         } else {
           if (inCombatTurn) this.combatSpeedStepsUsed++;
@@ -70,7 +69,7 @@ export class InputHandler {
         }
       }
       if (key === "s" || key === "arrowdown") {
-        if (inCombatTurn && (this.combatMovementDone || this.combatSpeedStepsUsed >= InputHandler.COMBAT_MAX_SPEED_STEPS)) {
+        if (inCombatTurn && (this.combatSpeedStepsUsed >= InputHandler.COMBAT_MAX_SPEED_STEPS)) {
           // blocked
         } else {
           if (inCombatTurn) this.combatSpeedStepsUsed++;
@@ -83,7 +82,7 @@ export class InputHandler {
 
       // Steering controls -- persistent steering angle
       if (key === "a" || key === "arrowleft") {
-        if (inCombatTurn && (this.combatMovementDone || this.combatSteeringStepsUsed >= InputHandler.COMBAT_MAX_STEERING_STEPS)) {
+        if (inCombatTurn && (this.combatSteeringStepsUsed >= InputHandler.COMBAT_MAX_STEERING_STEPS)) {
           // blocked
         } else {
           if (inCombatTurn) this.combatSteeringStepsUsed++;
@@ -97,7 +96,7 @@ export class InputHandler {
         }
       }
       if (key === "d" || key === "arrowright") {
-        if (inCombatTurn && (this.combatMovementDone || this.combatSteeringStepsUsed >= InputHandler.COMBAT_MAX_STEERING_STEPS)) {
+        if (inCombatTurn && (this.combatSteeringStepsUsed >= InputHandler.COMBAT_MAX_STEERING_STEPS)) {
           // blocked
         } else {
           if (inCombatTurn) this.combatSteeringStepsUsed++;
@@ -113,29 +112,25 @@ export class InputHandler {
 
       // Q: center steering to 0
       if (key === "q") {
-        if (inCombatTurn && this.combatMovementDone) {
-          // blocked
-        } else {
-          this.driveState.steeringAngle = 0;
-          if (!inCombatTurn) {
-            this.sendDriveState();
-          }
+        this.driveState.steeringAngle = 0;
+        if (!inCombatTurn) {
+          this.sendDriveState();
         }
       }
 
-      // Space: commit movement segment early (to chain multiple moves), or start combat
+      // Space: end turn (commit movement + advance), or start combat
       if (e.key === " ") {
         if (this.isInCombat && this.isMyTurn) {
-          if (this.combatPreview) {
-            this.confirmMove();
-          }
+          this.commitMovementThen(() => {
+            this.network.send({ type: "endTurn" });
+          });
         } else if (!this.combatZone) {
           this.network.send({ type: "startCombat" });
         }
       }
 
-      // Escape: undo all movement planning — restore driveState to start-of-turn values
-      if (e.key === "Escape" && this.isInCombat && this.isMyTurn && !this.combatMovementDone) {
+      // Escape: undo movement planning — restore driveState to start-of-turn values
+      if (e.key === "Escape" && this.isInCombat && this.isMyTurn) {
         this.driveState = { ...this.combatTurnStartDriveState };
         this.combatSpeedStepsUsed = 0;
         this.combatSteeringStepsUsed = 0;
@@ -179,22 +174,6 @@ export class InputHandler {
       });
     });
 
-    document.getElementById("btn-confirm-move")?.addEventListener("click", (e) => {
-      e.stopPropagation();
-      if (this.combatPreview) this.confirmMove();
-    });
-
-    document.getElementById("btn-cancel-move")?.addEventListener("click", (e) => {
-      e.stopPropagation();
-      if (!this.combatMovementDone) {
-        this.driveState = { ...this.combatTurnStartDriveState };
-        this.combatSpeedStepsUsed = 0;
-        this.combatSteeringStepsUsed = 0;
-        this.combatPreview = null;
-        this.renderer.updateMovementPreview(null, 0);
-      }
-    });
-
     document.getElementById("btn-respawn")?.addEventListener("click", (e) => {
       e.stopPropagation();
       this.driveState = { targetSpeed: 0, steeringAngle: 0 };
@@ -208,19 +187,6 @@ export class InputHandler {
 
   private get isMyTurn(): boolean {
     return this.combatZone?.currentTurn === this.localPlayerId;
-  }
-
-  /** Commit movement segment early (Space or Confirm button) -- doesn't end turn */
-  private confirmMove(): void {
-    if (!this.combatPreview) return;
-    this.network.send({
-      type: "combatMoveConfirm",
-      driveState: { ...this.combatPreview.driveState },
-      ticks: this.combatPreview.ticks,
-    });
-    this.combatPreview = null;
-    this.combatMovementDone = true;
-    this.renderer.updateMovementPreview(null, 0);
   }
 
   /** Send drive state to server (exploration mode) */
@@ -277,7 +243,6 @@ export class InputHandler {
         ticks: this.combatPreview.ticks,
       });
       this.combatPreview = null;
-      this.combatMovementDone = true;
       this.renderer.updateMovementPreview(null, 0);
     }
     action();
@@ -287,7 +252,6 @@ export class InputHandler {
   resetCombatTurn(): void {
     this.combatSpeedStepsUsed = 0;
     this.combatSteeringStepsUsed = 0;
-    this.combatMovementDone = false;
     this.combatTurnStartDriveState = { ...this.driveState };
     this.combatPreview = null;
     this.renderer.updateMovementPreview(null, 0);

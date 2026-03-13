@@ -641,12 +641,7 @@ export class Renderer {
   updateMovementPreview(path: Vec2[] | null, finalHeading: number): void {
     this.previewGraphics.clear();
 
-    const confirmBtn = document.getElementById("btn-confirm-move");
-    const cancelBtn = document.getElementById("btn-cancel-move");
-
     if (!path || path.length === 0) {
-      if (confirmBtn) confirmBtn.style.display = "none";
-      if (cancelBtn) cancelBtn.style.display = "none";
       return;
     }
 
@@ -686,9 +681,6 @@ export class Renderer {
     this.previewGraphics.closePath();
     this.previewGraphics.stroke({ width: 1, color: 0x66bb6a, alpha: 0.5 });
 
-    // Show confirm/cancel buttons
-    if (confirmBtn) confirmBtn.style.display = "";
-    if (cancelBtn) cancelBtn.style.display = "";
   }
 
   animateCombatMove(

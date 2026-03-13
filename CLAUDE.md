@@ -117,9 +117,9 @@ packages/
 
 - **Ghost car preview**: Every frame, client runs `simulatePhysics()` forward ~60 ticks from the player's current state and draws a curved trajectory line + ghost car (faded rectangle) at the final projected position/rotation. Visible in both exploration and combat. In combat during the player's turn, the combat preview replaces the ghost preview. Rendered via `renderer.updateGhostPreview()`.
 
-- **Combat movement**: Preview-then-confirm model. Client runs shared `simulatePhysics()` to show a green trajectory preview. Player presses Space (or "Confirm Move" button) to commit — client sends `combatMoveConfirm` with `DriveState` and tick count, server replays the same deterministic simulation and broadcasts `combatMoveResult` with the path for all clients to animate. Escape/Cancel clears the preview. `combatMovementBudget = COMBAT_TICKS_PER_TURN (30)`. Budget resets on `advanceTurn()`. Multiple move segments allowed per turn.
+- **Combat movement**: Single "End Turn" model. Client runs shared `simulatePhysics()` to show a green trajectory preview of remaining movement budget. Player adjusts speed/steering, then presses Space or "End Turn" button to commit movement and advance the turn. `commitMovementThen()` sends `combatMoveConfirm` with the full remaining budget, then executes the follow-up action (end turn, fire weapon, etc.). Escape resets drive state to start-of-turn values. `combatMovementBudget = COMBAT_TICKS_PER_TURN (30)`. Budget resets on `advanceTurn()`.
 
-- **Combat input limits**: During movement phase, speed can be adjusted by 1 step (up or down), steering by up to 3 steps. After confirming a move, no further speed or steering adjustments are allowed for the rest of the turn. Limits reset on turn change.
+- **Combat input limits**: During a turn, speed can be adjusted by 1 step (up or down), steering by up to 3 steps. Limits reset on turn change.
 
 - **HUD gauges**: Bottom-right area shows speedometer (semicircular gauge with needle + vertical speed bar) and horizontal steering angle meter. Steering indicator shows actual steeringAngle position. Updated every frame via `renderer.updateDriveGauges()`. HTML/CSS elements in `index.html`.
 
@@ -166,7 +166,7 @@ packages/
   - Laser: cyan beam line that fades out over 200ms with impact flash
   - Projectile: orange bullet that travels from shooter to target over 400ms with trail and impact
 
-- Combat UI shows "Laser [N]" and "Gun [N]" buttons with current ammo/energy counts; buttons disable at 0
+- Combat UI shows "Laser [N]", "Gun [N]", and "End Turn [Space]" buttons; ammo/energy buttons disable at 0
 
 - Persistence migration: old saves with single "Bumper Cannon" weapon are auto-migrated to dual weapons on restore
 
