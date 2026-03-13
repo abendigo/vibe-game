@@ -6,3 +6,7 @@ dist/
 .vite/
 .DS_Store
 packages/server/data/
+packages/data/
+coverage/
+playwright-report/
+test-results/
