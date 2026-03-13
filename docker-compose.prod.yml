@@ -1,0 +1,11 @@
+services:
+  game:
+    image: ghcr.io/abendigo/vibe-game:latest
+    ports:
+      - "3001:3001"
+    volumes:
+      - game-data:/app/packages/server/data
+    restart: unless-stopped
+
+volumes:
+  game-data:
