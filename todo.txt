@@ -1,3 +1,0 @@
-
-when the vehicle moves, slow the anmation a little, its too fast currently. 
-add a zoom in/zoom out option to the map, with buttons. add a jump to default zoom level button as well. 
