@@ -47,15 +47,25 @@ packages/
 - `npm run test:all` — run unit tests + E2E tests
 
 ## Key Architecture Decisions
+
 - **WebSocket protocol**: discriminated union message types (`ClientMessage` / `ServerMessage` in shared/types.ts). All messages are JSON with a `type` field.
+
 - **Game phases**: Lobby → Exploring → Combat → Shopping (enum `GamePhase`)
+
 - **State management**: `GameStateManager` class on server is the single source of truth. Server broadcasts serialized state to all clients.
+
 - **Serialization**: `GameState.players` is a `Map<string, Player>` — use `serializeGameState`/`deserializeGameState` helpers for network transfer (Map doesn't JSON.stringify natively).
+
 - **Rendering**: Pixi.js v8 (async `Application.init()`). All visuals are placeholder shapes (rectangles for cars, grid for ground). Minimap in top-right corner shows zoomed-out view of full map with player dots and viewport indicator. Info panel in bottom-left shows local player stats. Game log panel on right side shows events in real-time.
+
 - **Movement model**: Persistent steering angle physics. Client sends `DriveState` (targetSpeed + steeringAngle), server runs `tickPhysics()` each tick. Speed is instant (no acceleration curve), steering angle is persistent (no auto-centering). Turn rate proportional to angle. Physics constants in `PHYSICS` export from shared types.
+
 - **Exploration**: real-time, server runs 60fps tick loop with physics + broadcasting state
+
 - **Combat**: turn-based, server validates turns and broadcasts results. Movement uses a budget system (multiple moves per turn allowed).
+
 - **Persistence**: file-based JSON save to `packages/server/data/gamestate.json`. Player data and credentials keyed by name. Auto-saves every 30s + on SIGINT/SIGTERM. Save also triggers on player disconnect.
+
 - **Authentication**: Name + password auth with scrypt hashing. Server auto-registers new names, verifies password for existing ones. Session tokens (in-memory) allow reconnect without re-entering password. Client stores token in `localStorage`. Duplicate connection prevention per player name.
 
 ## Maintenance Rules
@@ -77,19 +87,33 @@ packages/
 - E2E tests use Playwright (`playwright.config.ts`), test files in `e2e/`. Client exposes `__TEST_PLAYER_POSITION__` and `__TEST_GAME_STATE__` on window for E2E assertions
 
 ## Movement & Physics
+
 - **Input model**: Discrete tap-to-set. Client sends `{ type: "driveState", targetSpeed, steeringAngle }` when state changes. Server stores latest `DriveState` per player in `playerDriveStates` map.
+
 - **Speed**: Integer steps 0 to `maxSpeed` (effective speed from car parts). W/ArrowUp = +1, S/ArrowDown = -1. Speed holds until changed — no decay, no acceleration curve. Instant.
+
 - **Steering**: A/D sets a persistent steering angle in discrete steps of `STEERING_STEP` (5 degrees), clamped to [-MAX_STEERING_ANGLE, MAX_STEERING_ANGLE] ([-45, 45]). Q centers to 0. No auto-centering — angle holds until player changes it. Turn rate per tick = `(angle / MAX_STEERING_ANGLE) * MAX_TURN_RATE`. Only steers when speed >= MIN_SPEED_FOR_TURN.
+
 - **Input handling**: Discrete taps only (`e.repeat` ignored). No hold-to-repeat. No keyup tracking.
+
 - **Physics constants** (exported from `@game/shared`): `MAX_TURN_RATE: 0.06 rad/tick`, `MIN_SPEED_FOR_TURN: 0.3`, `STEERING_STEP: 5°`, `MAX_STEERING_ANGLE: 45°`
+
 - **DriveState**: `{ targetSpeed: number; steeringAngle: number }` — replaces old speed-only model
+
 - **PhysicsSnapshot**: `{ position, speed, heading, steeringAngle }` — includes steering angle for simulation
+
 - **Player velocity**: `Player.velocity: { speed: number; heading: number }` — speed is scalar (integer), heading is angle in radians
+
 - **Ghost car preview**: Every frame, client runs `simulatePhysics()` forward ~60 ticks from the player's current state and draws a curved trajectory line + ghost car (faded rectangle) at the final projected position/rotation. Visible in both exploration and combat. In combat during the player's turn, the combat preview replaces the ghost preview. Rendered via `renderer.updateGhostPreview()`.
+
 - **Combat movement**: Preview-then-confirm model. Client runs shared `simulatePhysics()` to show a green trajectory preview. Player presses Space (or "Confirm Move" button) to commit — client sends `combatMoveConfirm` with `DriveState` and tick count, server replays the same deterministic simulation and broadcasts `combatMoveResult` with the path for all clients to animate. Escape/Cancel clears the preview. `combatMovementBudget = COMBAT_TICKS_PER_TURN (30)`. Budget resets on `advanceTurn()`. Multiple move segments allowed per turn.
+
 - **Combat input limits**: During movement phase, speed can be adjusted by 1 step (up or down), steering by up to 3 steps. After confirming a move, no further speed or steering adjustments are allowed for the rest of the turn. Limits reset on turn change.
+
 - **HUD gauges**: Bottom-right area shows speedometer (semicircular gauge with needle + vertical speed bar) and horizontal steering angle meter. Steering indicator shows actual steeringAngle position. Updated every frame via `renderer.updateDriveGauges()`. HTML/CSS elements in `index.html`.
+
 - **Weapon range visualization**: In combat, local player's turn shows translucent range circles — cyan for laser, orange for projectile. Movement is visualized via the trajectory preview line (no budget circle).
+
 - **Weapon firing**: Does NOT rotate the car to face the target. Car keeps its heading when firing.
 
 ## Car Customization Model
@@ -98,25 +122,41 @@ packages/
 - Effective stats = base stats + sum of part bonuses
 
 ## Combat System
+
 - Turn-based, initiated by a player (spacebar). Creates a `CombatZone` with a center (initiator's position) and radius (300px).
+
 - Only players within the combat radius become combatants and enter turn-based mode. Players outside continue real-time exploration. If a non-combatant moves into the combat zone, they automatically join the combat (inserted into turn order after the current turn). Server broadcasts `combatJoin` message when this happens.
+
 - `CombatZone` in `GameState` holds: `center`, `radius`, `combatantIds`, `turnOrder`, `currentTurn`
+
 - Actions: `move` (to Vec2), `attack` (manual target + weapon), `fireLaser`, `fireProjectile`, `useItem`, `wait`
+
 - Server validates it's the acting player's turn before processing
+
 - Damage = weapon damage - target armor
+
 - Combat circle is rendered in the world (red tinted area + border) and on the minimap
 
 ## Weapon System
+
 - Each car has two weapon types: **Laser Emitter** (instant hitscan) and **Machine Gun** (projectile)
+
 - `WeaponKind` enum: `Laser` | `Projectile` — stored in `PartStats.weaponKind`
+
 - **Laser**: 8 damage, 200 range, 10 energy (tracked in `PartStats.energy`/`maxEnergy`)
+
 - **Projectile**: 4 damage, 150 range, 20 ammo (tracked in `PartStats.ammo`/`maxAmmo`)
+
 - **Auto-targeting**: `fireLaser`/`fireProjectile` actions require no target — server finds all enemy combatants in range and picks one randomly
+
 - **Hit/miss system**: Hit chance = base 70% + gunnery×5%, clamped 30-95%. Roll and chance are returned in `CombatResult` for game log display. Misses still consume ammo/energy but deal no damage; miss animation offsets the target position
+
 - **Animations**: Server returns `WeaponAnimationData` (kind, from, to, hit) in `CombatResult`. Client renders:
   - Laser: cyan beam line that fades out over 200ms with impact flash
   - Projectile: orange bullet that travels from shooter to target over 400ms with trail and impact
+
 - Combat UI shows "Laser [N]" and "Gun [N]" buttons with current ammo/energy counts; buttons disable at 0
+
 - Persistence migration: old saves with single "Bumper Cannon" weapon are auto-migrated to dual weapons on restore
 
 ## Player Skills
@@ -125,29 +165,51 @@ packages/
 - Skills are displayed in the info panel
 
 ## Escape Mechanic
+
 - **Distance-based**: A combatant escapes combat automatically by moving 1000+ px away from all other combatants (`ESCAPE_DISTANCE = 1000`)
+
 - `checkDistanceEscape(playerId)` checks after every combat move (player or NPC)
+
 - On escape: player is removed from combat; if <2 combatants remain, combat ends
+
 - Server broadcasts `combatEscape` message to notify all clients
+
 - No UI button needed — escape happens organically through movement
 
 ## Map System
+
 - **Tile-based**: 40x40 grid of 100px tiles, 4000x4000 world
+
 - **Tile types**: `TileType.Grass` (0), `TileType.Road` (1), `TileType.Building` (2)
+
 - **Town layout**: Main 2-tile-wide road loop (tiles 12-27), cross streets bisecting N-S and E-W, entry roads from all 4 map edges
+
 - **Buildings**: Visual-only rectangles with distinct colors, placed in 4 quadrants inside the loop. `BuildingDef` has position, size, color, optional name
+
 - **Map data**: `TOWN_MAP` exported from `shared/townMap.ts` — contains tile grid, building defs, NPC waypoints
+
 - **`getBuildingColor(row, col)`**: Precomputed lookup for per-tile building colors during rendering
+
 - **Rendering**: `drawGrid()` in renderer paints each tile by type/color, draws building outlines, then subtle grid lines
+
 - **Player spawn**: South entry road area (~2000, 3400-3600)
+
 - **Zoom**: Scroll wheel or +/-/Reset buttons (25%-300%, default 100%). Camera, minimap viewport, and screen-to-world all zoom-aware
 
 ## NPC System
+
 - **Practice NPC**: "Target Dummy" — follows a waypoint circuit along the main road loop
+
 - `Player.isNPC?: boolean` flag distinguishes NPCs from human players
+
 - `addNPC()` creates an NPC at the first waypoint with initial velocity
+
 - **Exploration**: `tickNPCInput()` runs each server tick. `computeNPCDriveState()` steers toward the next waypoint (discrete 5° steps). Advances to next waypoint when within 80px threshold. Waypoints defined in `TOWN_MAP.npcWaypoints` (8 points, clockwise around the main loop)
+
 - **Combat AI**: When it's the NPC's turn, `processNPCTurn()` fires back 25% of the time (prefers laser, falls back to projectile), otherwise waits. 1-second delay before acting for natural feel
+
 - **Turn scheduling**: `scheduleNPCTurn()` is called after every turn change; uses a timer to auto-process NPC turns
+
 - NPCs are rendered with orange `[NPC]` name tag on the client
+
 - NPC is spawned on server start with id `"npc-target"`
