@@ -51,10 +51,20 @@
       }
       #combat-ui button:hover:not(:disabled) { background: #555; }
       #combat-ui button:disabled { opacity: 0.4; cursor: default; }
-      #info-panel {
+      #bottom-left-stack {
         position: fixed;
         bottom: 10px;
         left: 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        z-index: 10;
+        pointer-events: none;
+      }
+      #bottom-left-stack > * {
+        pointer-events: auto;
+      }
+      #info-panel {
         color: #fff;
         font-family: monospace;
         font-size: 12px;
@@ -62,7 +72,6 @@
         padding: 10px 14px;
         border-radius: 8px;
         pointer-events: none;
-        z-index: 10;
         line-height: 1.6;
         min-width: 180px;
       }
@@ -112,10 +121,6 @@
 
       /* Respawn button */
       #btn-respawn {
-        position: fixed;
-        bottom: 60px;
-        left: 10px;
-        z-index: 10;
         padding: 6px 14px;
         cursor: pointer;
         font-family: monospace;
@@ -123,14 +128,12 @@
         color: #fff;
         border: 1px solid #666;
         border-radius: 4px;
+        align-self: flex-start;
       }
       #btn-respawn:hover { background: #555; }
 
       /* Drive gauges */
       #drive-gauges {
-        position: fixed;
-        bottom: 10px;
-        right: 10px;
         color: #fff;
         font-family: monospace;
         font-size: 11px;
@@ -378,27 +381,29 @@
       <div id="player-count">Players: 0</div>
       <div id="turn-display"></div>
     </div>
-    <div id="info-panel"></div>
-    <button id="btn-respawn">Respawn</button>
+    <div id="bottom-left-stack">
+      <button id="btn-respawn">Respawn</button>
+      <div id="drive-gauges">
+        <div id="speedometer">
+          <div id="speedo-gauge">
+            <div id="speedo-needle"></div>
+          </div>
+          <div id="speed-bar"></div>
+          <div id="speed-value">0 / 8</div>
+        </div>
+        <div id="steering-gauge">
+          <div id="steering-track">
+            <div id="steering-center-mark"></div>
+            <div id="steering-indicator"></div>
+          </div>
+          <div id="steering-value">0°</div>
+        </div>
+      </div>
+      <div id="info-panel"></div>
+    </div>
     <div id="game-log">
       <div class="log-title">Game Log</div>
       <div id="log-entries"></div>
-    </div>
-    <div id="drive-gauges">
-      <div id="speedometer">
-        <div id="speedo-gauge">
-          <div id="speedo-needle"></div>
-        </div>
-        <div id="speed-bar"></div>
-        <div id="speed-value">0 / 8</div>
-      </div>
-      <div id="steering-gauge">
-        <div id="steering-track">
-          <div id="steering-center-mark"></div>
-          <div id="steering-indicator"></div>
-        </div>
-        <div id="steering-value">0°</div>
-      </div>
     </div>
     <div id="zoom-controls">
       <button id="btn-zoom-in">+</button>
