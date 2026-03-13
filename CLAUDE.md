@@ -45,6 +45,17 @@ packages/
 - `npm run test:coverage` — run tests with V8 coverage report (output in `coverage/`)
 - `npm run test:e2e` — run Playwright E2E tests (auto-starts client + server)
 - `npm run test:all` — run unit tests + E2E tests
+- `docker compose up --build` — build and run in Docker (single container, port 3001)
+- `docker compose up -d` — run in background
+
+## Deployment
+
+- **Single Docker image**: server serves both the API/WebSocket and the static client files on port 3001
+- **Multi-stage Dockerfile**: build stage compiles shared + server + client, runtime stage is slim Node 22
+- **docker-compose.yml**: maps port 3001, mounts a named volume for `packages/server/data` (save file persistence)
+- **WebSocket URL**: client auto-derives from `window.location` in production, uses `ws://localhost:3001` in dev (`import.meta.env.DEV`)
+- **Health check**: `GET /api/health` returns JSON with player count and game phase
+- **Static files**: server serves `packages/client/dist/` for all non-API HTTP requests, with SPA fallback to `index.html`
 
 ## Key Architecture Decisions
 

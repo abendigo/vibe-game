@@ -1,4 +1,7 @@
 import { createServer } from "node:http";
+import { readFile, stat } from "node:fs/promises";
+import { join, extname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { WebSocketServer, WebSocket } from "ws";
 import {
   type ClientMessage,
@@ -55,17 +58,59 @@ function broadcastGameState(): void {
   });
 }
 
-// ── HTTP server (health check) ──
+// ── HTTP server (static files + health check) ──
 
-const httpServer = createServer((_req, res) => {
-  res.writeHead(200, { "Content-Type": "application/json" });
-  res.end(
-    JSON.stringify({
+const __dirname = fileURLToPath(new URL(".", import.meta.url));
+const CLIENT_DIST = join(__dirname, "..", "..", "client", "dist");
+
+const MIME_TYPES: Record<string, string> = {
+  ".html": "text/html",
+  ".js": "application/javascript",
+  ".css": "text/css",
+  ".json": "application/json",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".svg": "image/svg+xml",
+  ".woff": "font/woff",
+  ".woff2": "font/woff2",
+};
+
+const httpServer = createServer(async (req, res) => {
+  const url = req.url ?? "/";
+
+  // Health check endpoint
+  if (url === "/api/health") {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({
       status: "ok",
       players: gameState.state.players.size,
       phase: gameState.state.phase,
-    })
-  );
+    }));
+    return;
+  }
+
+  // Serve static client files
+  let filePath = join(CLIENT_DIST, url === "/" ? "index.html" : url);
+  try {
+    const fileStat = await stat(filePath);
+    if (fileStat.isDirectory()) {
+      filePath = join(filePath, "index.html");
+    }
+    const data = await readFile(filePath);
+    const ext = extname(filePath);
+    res.writeHead(200, { "Content-Type": MIME_TYPES[ext] ?? "application/octet-stream" });
+    res.end(data);
+  } catch {
+    // SPA fallback: serve index.html for unmatched routes
+    try {
+      const data = await readFile(join(CLIENT_DIST, "index.html"));
+      res.writeHead(200, { "Content-Type": "text/html" });
+      res.end(data);
+    } catch {
+      res.writeHead(404);
+      res.end("Not found");
+    }
+  }
 });
 
 // ── WebSocket server ──

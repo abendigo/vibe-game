@@ -40,7 +40,13 @@ function rollText(roll: number | undefined, chance: number | undefined): string 
 // ── Setup ──
 
 const renderer = new Renderer();
-const network = new Network("ws://localhost:3001");
+// Derive WebSocket URL from current page location (works in dev and production)
+const wsProtocol = window.location.protocol === "https:" ? "wss" : "ws";
+const wsHost = window.location.host;
+const wsUrl = import.meta.env.DEV
+  ? "ws://localhost:3001"
+  : `${wsProtocol}://${wsHost}`;
+const network = new Network(wsUrl);
 
 let gameState: GameState = {
   players: new Map(),

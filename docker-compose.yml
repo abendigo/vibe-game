@@ -1,0 +1,11 @@
+services:
+  game:
+    build: .
+    ports:
+      - "3001:3001"
+    volumes:
+      - game-data:/app/packages/server/data
+    restart: unless-stopped
+
+volumes:
+  game-data:
