@@ -1,0 +1,28 @@
+{
+  "name": "@game/root",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:client": "npm -w @game/client run dev",
+    "dev:server": "npm -w @game/server run dev",
+    "build": "npm -w @game/shared run build && npm -w @game/server run build && npm -w @game/client run build",
+    "dev": "npm run dev:server & npm run dev:client",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "playwright test",
+    "test:all": "vitest run && playwright test"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.58.2",
+    "@vitest/coverage-v8": "^4.1.0",
+    "jsdom": "^28.1.0",
+    "vitest": "^4.1.0"
+  }
+}

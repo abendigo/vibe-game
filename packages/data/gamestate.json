@@ -1,0 +1,164 @@
+{
+  "players": {
+    "Target Dummy": {
+      "name": "Target Dummy",
+      "position": {
+        "x": 2612.817150687734,
+        "y": 1375.9630372117851
+      },
+      "rotation": 95.1799999999992,
+      "car": {
+        "id": "8e5acc22-d44b-4eb0-9097-f0af8a5e7054",
+        "parts": [
+          {
+            "id": "25a070d4-1406-4def-ac69-0d4f7f4abcb2",
+            "name": "Basic Engine",
+            "type": "Engine",
+            "stats": {
+              "speed": 3
+            }
+          },
+          {
+            "id": "8f24a530-4f0b-4492-b007-751697d87964",
+            "name": "Standard Wheels",
+            "type": "Wheels",
+            "stats": {
+              "speed": 1
+            }
+          },
+          {
+            "id": "c5f4b83b-0352-4c7f-84c6-3a61793bddec",
+            "name": "Light Plating",
+            "type": "Armor",
+            "stats": {
+              "armor": 2
+            }
+          },
+          {
+            "id": "3e446d74-2764-404b-9da8-3342d9c49e1c",
+            "name": "Laser Emitter",
+            "type": "Weapon",
+            "stats": {
+              "weaponKind": "Laser",
+              "damage": 8,
+              "range": 200,
+              "energy": 10,
+              "maxEnergy": 10,
+              "cooldown": 0,
+              "maxCooldown": 3
+            }
+          },
+          {
+            "id": "8d839202-5fb9-41a8-bf1f-53fb61d165c2",
+            "name": "Machine Gun",
+            "type": "Weapon",
+            "stats": {
+              "weaponKind": "Projectile",
+              "damage": 4,
+              "range": 150,
+              "ammo": 20,
+              "maxAmmo": 20,
+              "cooldown": 0,
+              "maxCooldown": 2
+            }
+          }
+        ],
+        "baseSpeed": 4,
+        "baseArmor": 2,
+        "baseHealth": 100
+      },
+      "skills": {
+        "driving": 1,
+        "gunnery": 1,
+        "luck": 1
+      },
+      "velocity": {
+        "speed": 3,
+        "heading": 95.1799999999992
+      }
+    },
+    "marko": {
+      "name": "marko",
+      "position": {
+        "x": 2909.1027778781317,
+        "y": 2022.3341143462183
+      },
+      "rotation": 3.1666666666666967,
+      "car": {
+        "id": "5130affd-bd65-4947-8161-d117a86a997a",
+        "parts": [
+          {
+            "id": "9b307d69-d624-4b34-bbdf-2e4d78423161",
+            "name": "Basic Engine",
+            "type": "Engine",
+            "stats": {
+              "speed": 3
+            }
+          },
+          {
+            "id": "a7c9c839-80a7-452a-9880-315188d04acf",
+            "name": "Standard Wheels",
+            "type": "Wheels",
+            "stats": {
+              "speed": 1
+            }
+          },
+          {
+            "id": "79c4a1a0-d7f5-45f0-b313-a5ea5366c922",
+            "name": "Light Plating",
+            "type": "Armor",
+            "stats": {
+              "armor": 2
+            }
+          },
+          {
+            "id": "aa98300c-3938-4f38-8a6b-1de8b7570cf5",
+            "name": "Laser Emitter",
+            "type": "Weapon",
+            "stats": {
+              "weaponKind": "Laser",
+              "damage": 8,
+              "range": 200,
+              "energy": 9,
+              "maxEnergy": 10,
+              "cooldown": 0,
+              "maxCooldown": 3
+            }
+          },
+          {
+            "id": "8dbd18f5-a4a4-4498-bf08-2dff615f6aeb",
+            "name": "Machine Gun",
+            "type": "Weapon",
+            "stats": {
+              "weaponKind": "Projectile",
+              "damage": 4,
+              "range": 150,
+              "ammo": 20,
+              "maxAmmo": 20,
+              "cooldown": 0,
+              "maxCooldown": 2
+            }
+          }
+        ],
+        "baseSpeed": 4,
+        "baseArmor": 2,
+        "baseHealth": 100
+      },
+      "skills": {
+        "driving": 1,
+        "gunnery": 1,
+        "luck": 1
+      },
+      "velocity": {
+        "speed": 0,
+        "heading": 3.1666666666666967
+      }
+    }
+  },
+  "credentials": {
+    "marko": {
+      "passwordHash": "512e0e8861210e313dc2c3112c4e2e64:bcb15b574b834bb7fea424dd925791f950d24100f3ae6c28f55acf8aef3f456acbfeb38bd02bf98266b2064fdd94a2af3c68920f1a07411dddbad3975f5f5cab"
+    }
+  },
+  "savedAt": "2026-03-13T16:29:27.341Z"
+}

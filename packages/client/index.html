@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Vehicular RPG</title>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      body {
+        background: #1a1a2e;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+        overflow: hidden;
+      }
+      canvas { display: block; }
+      #ui-overlay {
+        position: fixed;
+        top: 10px;
+        left: 10px;
+        color: #fff;
+        font-family: monospace;
+        font-size: 14px;
+        pointer-events: none;
+        z-index: 10;
+      }
+      #combat-ui {
+        position: fixed;
+        bottom: 10px;
+        left: 50%;
+        transform: translateX(-50%);
+        color: #fff;
+        font-family: monospace;
+        font-size: 14px;
+        z-index: 10;
+        display: none;
+        background: rgba(0,0,0,0.7);
+        padding: 12px 20px;
+        border-radius: 8px;
+      }
+      #combat-ui button {
+        margin: 0 4px;
+        padding: 6px 14px;
+        cursor: pointer;
+        font-family: monospace;
+        background: #333;
+        color: #fff;
+        border: 1px solid #666;
+        border-radius: 4px;
+      }
+      #combat-ui button:hover:not(:disabled) { background: #555; }
+      #combat-ui button:disabled { opacity: 0.4; cursor: default; }
+      #info-panel {
+        position: fixed;
+        bottom: 10px;
+        left: 10px;
+        color: #fff;
+        font-family: monospace;
+        font-size: 12px;
+        background: rgba(0,0,0,0.7);
+        padding: 10px 14px;
+        border-radius: 8px;
+        pointer-events: none;
+        z-index: 10;
+        line-height: 1.6;
+        min-width: 180px;
+      }
+      #info-panel .label { color: #888; }
+      #info-panel .value { color: #fff; }
+      #info-panel .hp-green { color: #66bb6a; }
+      #info-panel .hp-orange { color: #ffa726; }
+      #info-panel .hp-red { color: #ef5350; }
+      #info-panel .combat-status { color: #ff4444; font-weight: bold; }
+      #game-log {
+        position: fixed;
+        top: 10px;
+        right: 10px;
+        width: 280px;
+        max-height: calc(100vh - 20px);
+        color: #ccc;
+        font-family: monospace;
+        font-size: 11px;
+        background: rgba(0,0,0,0.7);
+        padding: 8px 10px;
+        border-radius: 8px;
+        pointer-events: none;
+        z-index: 10;
+        overflow-y: auto;
+        line-height: 1.5;
+      }
+      #game-log .log-title {
+        color: #888;
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        margin-bottom: 4px;
+        border-bottom: 1px solid #333;
+        padding-bottom: 4px;
+      }
+      #game-log .log-entry { margin-bottom: 3px; }
+      #game-log .log-time { color: #555; }
+      #game-log .log-join { color: #66bb6a; }
+      #game-log .log-leave { color: #ef5350; }
+      #game-log .log-combat { color: #ffa726; }
+      #game-log .log-hit { color: #4fc3f7; }
+      #game-log .log-miss { color: #888; }
+      #game-log .log-escape-ok { color: #66bb6a; }
+      #game-log .log-escape-fail { color: #ef5350; }
+      #game-log .log-roll { color: #666; font-size: 10px; }
+      #game-log .log-info { color: #aaa; }
+
+      /* Drive gauges */
+      #drive-gauges {
+        position: fixed;
+        bottom: 10px;
+        right: 300px;
+        color: #fff;
+        font-family: monospace;
+        font-size: 11px;
+        background: rgba(0,0,0,0.7);
+        padding: 10px 14px;
+        border-radius: 8px;
+        pointer-events: none;
+        z-index: 10;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        min-width: 160px;
+      }
+      /* Speedometer */
+      #speedometer {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      #speedo-gauge {
+        width: 60px;
+        height: 30px;
+        border-bottom: 2px solid #555;
+        border-radius: 60px 60px 0 0;
+        position: relative;
+        overflow: hidden;
+        background: rgba(255,255,255,0.05);
+      }
+      #speedo-needle {
+        position: absolute;
+        bottom: 0;
+        left: 50%;
+        width: 2px;
+        height: 28px;
+        background: #ef5350;
+        transform-origin: bottom center;
+        transform: rotate(-90deg);
+        transition: transform 0.1s ease-out;
+      }
+      #speed-bar {
+        display: flex;
+        flex-direction: column;
+        gap: 1px;
+      }
+      .speed-segment {
+        width: 12px;
+        height: 4px;
+        background: #333;
+        border-radius: 1px;
+      }
+      .speed-segment.active {
+        background: #66bb6a;
+      }
+      #speed-value {
+        color: #aaa;
+        font-size: 10px;
+        white-space: nowrap;
+      }
+      /* Steering gauge */
+      #steering-gauge {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      #steering-track {
+        width: 120px;
+        height: 10px;
+        background: rgba(255,255,255,0.08);
+        border-radius: 5px;
+        position: relative;
+      }
+      #steering-indicator {
+        position: absolute;
+        top: -1px;
+        width: 6px;
+        height: 12px;
+        background: #4fc3f7;
+        border-radius: 3px;
+        transform: translateX(-50%);
+        left: 50%;
+        transition: left 0.1s ease-out, background 0.1s;
+      }
+      #steering-center-mark {
+        position: absolute;
+        top: 0;
+        left: 50%;
+        width: 1px;
+        height: 10px;
+        background: #666;
+        transform: translateX(-50%);
+      }
+      #steering-value {
+        color: #aaa;
+        font-size: 10px;
+        white-space: nowrap;
+        min-width: 28px;
+        text-align: right;
+      }
+
+      /* Zoom controls */
+      #zoom-controls {
+        position: fixed;
+        top: 10px;
+        left: 150px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        background: rgba(0,0,0,0.7);
+        padding: 6px 12px;
+        border-radius: 8px;
+        z-index: 10;
+        font-family: monospace;
+        color: #aaa;
+        font-size: 12px;
+      }
+      #zoom-controls button {
+        padding: 4px 10px;
+        cursor: pointer;
+        font-family: monospace;
+        font-size: 12px;
+        background: #333;
+        color: #fff;
+        border: 1px solid #666;
+        border-radius: 4px;
+      }
+      #zoom-controls button:hover { background: #555; }
+
+      /* Login screen */
+      #login-screen {
+        position: fixed;
+        inset: 0;
+        background: #1a1a2e;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 100;
+        flex-direction: column;
+      }
+      #login-screen.hidden { display: none; }
+      #login-box {
+        background: rgba(255,255,255,0.05);
+        border: 1px solid #333;
+        border-radius: 8px;
+        padding: 32px 40px;
+        min-width: 320px;
+        font-family: monospace;
+        color: #fff;
+      }
+      #login-box h1 {
+        font-size: 20px;
+        margin-bottom: 4px;
+        color: #fff;
+        font-weight: normal;
+      }
+      #login-box .subtitle {
+        font-size: 11px;
+        color: #666;
+        margin-bottom: 24px;
+      }
+      #login-box label {
+        display: block;
+        font-size: 12px;
+        color: #888;
+        margin-bottom: 4px;
+      }
+      #login-box input {
+        display: block;
+        width: 100%;
+        padding: 8px 10px;
+        margin-bottom: 16px;
+        background: #111;
+        border: 1px solid #444;
+        border-radius: 4px;
+        color: #fff;
+        font-family: monospace;
+        font-size: 14px;
+        outline: none;
+      }
+      #login-box input:focus {
+        border-color: #4fc3f7;
+      }
+      #login-box button {
+        width: 100%;
+        padding: 10px;
+        background: #4fc3f7;
+        color: #1a1a2e;
+        border: none;
+        border-radius: 4px;
+        font-family: monospace;
+        font-size: 14px;
+        font-weight: bold;
+        cursor: pointer;
+      }
+      #login-box button:hover { background: #81d4fa; }
+      #login-box button:disabled {
+        background: #333;
+        color: #666;
+        cursor: default;
+      }
+      #login-error {
+        color: #ef5350;
+        font-size: 12px;
+        margin-bottom: 12px;
+        min-height: 16px;
+      }
+      #login-status {
+        color: #666;
+        font-size: 11px;
+        text-align: center;
+        margin-top: 12px;
+        min-height: 16px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="login-screen">
+      <div id="login-box">
+        <h1>Vehicular RPG</h1>
+        <div class="subtitle">New names are auto-registered</div>
+        <form id="login-form">
+          <label for="login-name">Name</label>
+          <input type="text" id="login-name" autocomplete="username" maxlength="24" required autofocus />
+          <label for="login-password">Password</label>
+          <input type="password" id="login-password" autocomplete="current-password" required />
+          <div id="login-error"></div>
+          <button type="submit" id="login-btn">Join Game</button>
+        </form>
+        <div id="login-status"></div>
+      </div>
+    </div>
+    <div id="ui-overlay">
+      <div id="phase-display">Phase: --</div>
+      <div id="player-count">Players: 0</div>
+      <div id="turn-display"></div>
+    </div>
+    <div id="info-panel"></div>
+    <button id="btn-respawn" style="position:fixed;bottom:10px;left:200px;z-index:10;padding:6px 14px;cursor:pointer;font-family:monospace;background:#333;color:#fff;border:1px solid #666;border-radius:4px;">Respawn</button>
+    <div id="game-log">
+      <div class="log-title">Game Log</div>
+      <div id="log-entries"></div>
+    </div>
+    <div id="drive-gauges">
+      <div id="speedometer">
+        <div id="speedo-gauge">
+          <div id="speedo-needle"></div>
+        </div>
+        <div id="speed-bar"></div>
+        <div id="speed-value">0 / 8</div>
+      </div>
+      <div id="steering-gauge">
+        <div id="steering-track">
+          <div id="steering-center-mark"></div>
+          <div id="steering-indicator"></div>
+        </div>
+        <div id="steering-value">0°</div>
+      </div>
+    </div>
+    <div id="zoom-controls">
+      <button id="btn-zoom-in">+</button>
+      <span id="zoom-value">100%</span>
+      <button id="btn-zoom-out">&minus;</button>
+      <button id="btn-zoom-reset">Reset</button>
+    </div>
+    <div id="combat-ui">
+      <button id="btn-fire-laser">Laser [10]</button>
+      <button id="btn-fire-projectile">Gun [20]</button>
+      <button id="btn-confirm-move" style="display:none">Confirm Move [Space]</button>
+      <button id="btn-cancel-move" style="display:none">Cancel [Esc]</button>
+      <button id="btn-end-turn">End Turn</button>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

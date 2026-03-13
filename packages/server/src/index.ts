@@ -1,0 +1,465 @@
+import { createServer } from "node:http";
+import { WebSocketServer, WebSocket } from "ws";
+import {
+  type ClientMessage,
+  type ServerMessage,
+  serializeGameState,
+} from "@game/shared";
+import { GameStateManager } from "./gameState.js";
+import { load, save, restorePlayer, startAutoSave } from "./persistence.js";
+import type { SaveData } from "./persistence.js";
+import type { StoredCredentials } from "./auth.js";
+import {
+  hashPassword,
+  verifyPassword,
+  createSession,
+  getSessionPlayer,
+} from "./auth.js";
+
+const PORT = 3001;
+const TICK_RATE = 60;
+const TICK_INTERVAL = 1000 / TICK_RATE;
+
+const gameState = new GameStateManager();
+
+// Loaded save data for restoring returning players
+let savedPlayerData: Record<string, { name: string; position: { x: number; y: number }; rotation: number; car: import("@game/shared").Player["car"]; velocity?: { speed: number; heading: number } }> = {};
+
+// Stored credentials keyed by player name
+let credentials: Record<string, StoredCredentials> = {};
+
+// Map WebSocket -> player ID
+const clients = new Map<WebSocket, string>();
+
+// ── Helpers ──
+
+function send(ws: WebSocket, msg: ServerMessage): void {
+  if (ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify(msg));
+  }
+}
+
+function broadcast(msg: ServerMessage): void {
+  const payload = JSON.stringify(msg);
+  for (const ws of clients.keys()) {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(payload);
+    }
+  }
+}
+
+function broadcastGameState(): void {
+  broadcast({
+    type: "gameState",
+    state: serializeGameState(gameState.state),
+  });
+}
+
+// ── HTTP server (health check) ──
+
+const httpServer = createServer((_req, res) => {
+  res.writeHead(200, { "Content-Type": "application/json" });
+  res.end(
+    JSON.stringify({
+      status: "ok",
+      players: gameState.state.players.size,
+      phase: gameState.state.phase,
+    })
+  );
+});
+
+// ── WebSocket server ──
+
+const wss = new WebSocketServer({ server: httpServer });
+
+wss.on("connection", (ws) => {
+  console.log("Client connected");
+
+  ws.on("message", (raw) => {
+    let msg: ClientMessage;
+    try {
+      msg = JSON.parse(raw.toString()) as ClientMessage;
+    } catch {
+      send(ws, { type: "error", message: "Invalid JSON" });
+      return;
+    }
+
+    handleMessage(ws, msg);
+  });
+
+  ws.on("close", () => {
+    const playerId = clients.get(ws);
+    if (playerId) {
+      // Save player data before removing so they can reconnect later
+      const player = gameState.state.players.get(playerId);
+      if (player) {
+        savedPlayerData[player.name] = {
+          name: player.name,
+          position: { ...player.position },
+          rotation: player.rotation,
+          car: structuredClone(player.car),
+          velocity: { ...player.velocity },
+        };
+      }
+
+      console.log(`Player ${playerId} disconnected`);
+      gameState.removePlayer(playerId);
+      clients.delete(ws);
+      broadcast({ type: "playerLeft", id: playerId });
+      save(gameState, credentials).catch((err) => console.error("Save on disconnect failed:", err));
+    }
+  });
+});
+
+// ── Message handler ──
+
+async function handleMessage(ws: WebSocket, msg: ClientMessage): Promise<void> {
+  switch (msg.type) {
+    case "join": {
+      // Check if this socket already has a player
+      if (clients.has(ws)) {
+        send(ws, { type: "error", message: "Already joined" });
+        return;
+      }
+
+      const { name, password } = msg;
+
+      if (!password || password.length < 1) {
+        send(ws, { type: "error", message: "Password is required" });
+        return;
+      }
+
+      // Check if player name is already registered
+      if (credentials[name]) {
+        // Verify password
+        const valid = await verifyPassword(password, credentials[name].passwordHash);
+        if (!valid) {
+          send(ws, { type: "error", message: "Wrong password" });
+          return;
+        }
+
+        // Check if this player is already connected
+        for (const [existingWs, existingId] of clients) {
+          const existingPlayer = gameState.state.players.get(existingId);
+          if (existingPlayer?.name === name) {
+            send(ws, { type: "error", message: "Player already connected" });
+            return;
+          }
+        }
+      } else {
+        // Register new player
+        const passwordHash = await hashPassword(password);
+        credentials[name] = { passwordHash };
+        console.log(`New player "${name}" registered`);
+      }
+
+      const id = crypto.randomUUID();
+      const player = gameState.addPlayer(id, name);
+
+      // Restore saved data if this player name was previously saved
+      if (savedPlayerData[name]) {
+        restorePlayer(player, savedPlayerData[name]);
+        console.log(`Player "${name}" restored from save`);
+      }
+
+      clients.set(ws, id);
+      const token = createSession(name);
+      console.log(`Player "${name}" joined as ${id}`);
+
+      // Send auth confirmation with session token
+      send(ws, { type: "authenticated", playerId: id, token });
+
+      // Send current state to the new player
+      send(ws, {
+        type: "gameState",
+        state: serializeGameState(gameState.state),
+      });
+
+      // Broadcast to everyone that a new player joined
+      broadcast({ type: "playerJoined", player });
+      break;
+    }
+
+    case "reconnect": {
+      if (clients.has(ws)) {
+        send(ws, { type: "error", message: "Already joined" });
+        return;
+      }
+
+      const playerName = getSessionPlayer(msg.token);
+      if (!playerName) {
+        send(ws, { type: "error", message: "Invalid or expired session" });
+        return;
+      }
+
+      // Check if already connected
+      for (const [, existingId] of clients) {
+        const existingPlayer = gameState.state.players.get(existingId);
+        if (existingPlayer?.name === playerName) {
+          send(ws, { type: "error", message: "Player already connected" });
+          return;
+        }
+      }
+
+      const id = crypto.randomUUID();
+      const player = gameState.addPlayer(id, playerName);
+
+      if (savedPlayerData[playerName]) {
+        restorePlayer(player, savedPlayerData[playerName]);
+        console.log(`Player "${playerName}" reconnected from token`);
+      }
+
+      clients.set(ws, id);
+      const newToken = createSession(playerName);
+
+      send(ws, { type: "authenticated", playerId: id, token: newToken });
+      send(ws, {
+        type: "gameState",
+        state: serializeGameState(gameState.state),
+      });
+      broadcast({ type: "playerJoined", player });
+      break;
+    }
+
+    case "driveState": {
+      const playerId = clients.get(ws);
+      if (!playerId) {
+        send(ws, { type: "error", message: "Not joined" });
+        return;
+      }
+      gameState.setDriveState(playerId, {
+        targetSpeed: msg.targetSpeed,
+        steeringAngle: msg.steeringAngle,
+      });
+      break;
+    }
+
+    case "startCombat": {
+      const playerId = clients.get(ws);
+      if (!playerId) return;
+
+      const combatZone = gameState.startCombat(playerId);
+      if (combatZone) {
+        broadcast({ type: "combatStart", combatZone });
+        broadcast({
+          type: "turnChange",
+          playerId: combatZone.currentTurn,
+        });
+        scheduleNPCTurn();
+      } else {
+        send(ws, {
+          type: "error",
+          message: "Cannot start combat (need 2+ nearby players, or combat already active)",
+        });
+      }
+      break;
+    }
+
+    case "combatAction": {
+      const playerId = clients.get(ws);
+      if (!playerId) return;
+
+      const result = gameState.processCombatAction(playerId, msg.action);
+      broadcast({ type: "combatUpdate", action: msg.action, result });
+
+      if (result.success && msg.action.type !== "move") {
+        // Auto-advance turn after a successful non-escape, non-move action
+        // (move uses budget and doesn't end turn)
+        const nextPlayer = gameState.advanceTurn();
+        if (nextPlayer) {
+          broadcast({ type: "turnChange", playerId: nextPlayer });
+        }
+        scheduleNPCTurn();
+      }
+      broadcastGameState();
+      break;
+    }
+
+    case "combatMoveConfirm": {
+      const playerId = clients.get(ws);
+      if (!playerId) return;
+
+      const moveResult = gameState.processCombatMove(playerId, msg.driveState, msg.ticks);
+      if (moveResult.success) {
+        broadcast({
+          type: "combatMoveResult",
+          playerId,
+          path: moveResult.path!,
+          finalPosition: moveResult.finalPosition!,
+          finalHeading: moveResult.finalHeading!,
+          distanceUsed: moveResult.distanceUsed!,
+        });
+
+        // Check if this player escaped by distance
+        const escapeCheck = gameState.checkDistanceEscape(playerId);
+        if (escapeCheck.escaped) {
+          broadcast({
+            type: "combatEscape",
+            playerId,
+            playerName: escapeCheck.playerName ?? "",
+          });
+        }
+
+        broadcastGameState();
+      } else {
+        send(ws, { type: "error", message: moveResult.message });
+      }
+      break;
+    }
+
+    case "endTurn": {
+      const playerId = clients.get(ws);
+      if (!playerId) return;
+
+      const zone = gameState.state.combatZone;
+      if (!zone || zone.currentTurn !== playerId) {
+        send(ws, { type: "error", message: "Not your turn" });
+        return;
+      }
+
+      const nextPlayer = gameState.advanceTurn();
+      if (nextPlayer) {
+        broadcast({ type: "turnChange", playerId: nextPlayer });
+      }
+      scheduleNPCTurn();
+      broadcastGameState();
+      break;
+    }
+
+    case "respawn": {
+      const playerId = clients.get(ws);
+      if (!playerId) return;
+
+      if (gameState.isInCombat(playerId)) {
+        send(ws, { type: "error", message: "Cannot respawn during combat" });
+        return;
+      }
+
+      const player = gameState.state.players.get(playerId);
+      if (player) {
+        player.position = { x: 2000, y: 3500 };
+        player.velocity = { speed: 0, heading: player.velocity.heading };
+        gameState.setDriveState(playerId, { targetSpeed: 0, steeringAngle: 0 });
+      }
+      broadcastGameState();
+      break;
+    }
+  }
+}
+
+// ── NPC turn handling ──
+
+const NPC_TURN_DELAY_MS = 1000; // Delay before NPC takes its turn (feels more natural)
+let npcTurnTimer: ReturnType<typeof setTimeout> | null = null;
+
+function scheduleNPCTurn(): void {
+  if (npcTurnTimer) return; // Already scheduled
+
+  const zone = gameState.state.combatZone;
+  if (!zone) return;
+
+  const currentPlayer = gameState.state.players.get(zone.currentTurn);
+  if (!currentPlayer?.isNPC) return;
+
+  npcTurnTimer = setTimeout(() => {
+    npcTurnTimer = null;
+    processNPCTurnNow();
+  }, NPC_TURN_DELAY_MS);
+}
+
+function processNPCTurnNow(): void {
+  const zone = gameState.state.combatZone;
+  if (!zone) return;
+
+  const npcId = zone.currentTurn;
+  const currentPlayer = gameState.state.players.get(npcId);
+  if (!currentPlayer?.isNPC) return;
+
+  const turnResult = gameState.processNPCTurn();
+  if (!turnResult) return;
+
+  // Broadcast movement if the NPC moved
+  if (turnResult.moveResult) {
+    broadcast({
+      type: "combatMoveResult",
+      playerId: npcId,
+      path: turnResult.moveResult.path,
+      finalPosition: turnResult.moveResult.finalPosition,
+      finalHeading: turnResult.moveResult.finalHeading,
+      distanceUsed: turnResult.moveResult.distanceUsed,
+    });
+
+    // Check if NPC escaped by distance
+    const escapeCheck = gameState.checkDistanceEscape(npcId);
+    if (escapeCheck.escaped) {
+      broadcast({
+        type: "combatEscape",
+        playerId: npcId,
+        playerName: escapeCheck.playerName ?? "",
+      });
+    }
+  }
+
+  // Broadcast the combat action (fire or wait)
+  broadcast({
+    type: "combatUpdate",
+    action: { type: turnResult.combatAction } as any,
+    result: turnResult.combatResult,
+  });
+
+  // Auto-advance turn after NPC action
+  const nextPlayer = gameState.advanceTurn();
+  if (nextPlayer) {
+    broadcast({ type: "turnChange", playerId: nextPlayer });
+  }
+  broadcastGameState();
+
+  // If next turn is also NPC, schedule again
+  scheduleNPCTurn();
+}
+
+// ── Game loop: broadcast state at tick rate during exploration ──
+
+setInterval(() => {
+  // NPC input updates run regardless of client count (NPC is always active)
+  gameState.tickNPCInput();
+
+  if (clients.size > 0) {
+    // Run physics for all non-combat players (includes NPCs)
+    const joinedCombat = gameState.tickPhysics();
+    for (const playerId of joinedCombat) {
+      if (gameState.state.combatZone) {
+        broadcast({ type: "combatJoin", playerId, combatZone: gameState.state.combatZone });
+      }
+    }
+
+    // Check if it's an NPC's combat turn
+    scheduleNPCTurn();
+
+    broadcastGameState();
+  }
+}, TICK_INTERVAL);
+
+// ── Start ──
+
+async function start(): Promise<void> {
+  // Load saved state
+  const saveData = await load();
+  if (saveData) {
+    savedPlayerData = saveData.players;
+    credentials = saveData.credentials ?? {};
+  }
+
+  // Spawn NPC practice target
+  const npc = gameState.addNPC("npc-target", "Target Dummy");
+  console.log(`NPC "${npc.name}" spawned at (${npc.position.x}, ${npc.position.y})`);
+
+  // Start auto-save (every 30s + on shutdown)
+  startAutoSave(gameState, () => credentials);
+
+  httpServer.listen(PORT, () => {
+    console.log(`Game server running on http://localhost:${PORT}`);
+  });
+}
+
+start();
