@@ -67,6 +67,12 @@ export class InputHandler {
       // Ignore key repeats -- one press = one step
       if (e.repeat) return;
 
+      // Don't intercept keys when typing in form inputs
+      const active = document.activeElement;
+      if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA" || active.tagName === "SELECT")) {
+        return;
+      }
+
       // When input is blocked (e.g. garage overlay), only allow Escape
       if (this.inputBlocked) {
         if (e.key === "Escape" && this.onBlockedEscape) {
