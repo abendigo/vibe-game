@@ -691,6 +691,20 @@ export class GameStateManager {
     const range = weapon.stats.range ?? 100;
     const kindLabel = kind === WeaponKind.Laser ? "laser" : "projectile";
 
+    // Validate target exists and is in range BEFORE consuming ammo
+    if (targetId) {
+      const target = this.state.players.get(targetId);
+      if (!target) {
+        return { success: false, message: "Target not found" };
+      }
+      const dx = target.position.x - player.position.x;
+      const dy = target.position.y - player.position.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist > range) {
+        return { success: false, message: `Target out of range (${Math.round(dist)}/${range})` };
+      }
+    }
+
     // Consume resource and start cooldown
     if (kind === WeaponKind.Laser) {
       weapon.stats.energy = (weapon.stats.energy ?? 1) - 1;
@@ -715,40 +729,10 @@ export class GameStateManager {
       };
     }
 
-    // Validate target
-    const target = this.state.players.get(targetId);
-    if (!target) {
-      return { success: true, message: `${player.name} fired ${kindLabel} — target gone`,
-        animation: {
-          kind: kindLabel,
-          from: { ...player.position },
-          to: { x: player.position.x + Math.cos(player.velocity.heading) * range,
-                 y: player.position.y + Math.sin(player.velocity.heading) * range },
-          hit: false,
-        },
-      };
-    }
-
-    // Range check
+    // Target already validated above
+    const target = this.state.players.get(targetId)!;
     const dx = target.position.x - player.position.x;
     const dy = target.position.y - player.position.y;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    if (dist > range) {
-      // Target out of range — shot still consumed, fires toward target but misses
-      return {
-        success: true,
-        message: `${player.name} fired ${kindLabel} at ${target.name} — out of range`,
-        animation: {
-          kind: kindLabel,
-          from: { ...player.position },
-          to: {
-            x: player.position.x + (dx / dist) * range,
-            y: player.position.y + (dy / dist) * range,
-          },
-          hit: false,
-        },
-      };
-    }
 
     // Hit chance: base 70% + gunnery*5%, clamped 30-95%
     const hitChance = Math.max(30, Math.min(95, 70 + player.skills.gunnery * 5));

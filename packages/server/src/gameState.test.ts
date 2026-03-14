@@ -648,7 +648,7 @@ describe("GameStateManager", () => {
         expect(result.message).toBe("Out of energy");
       });
 
-      it("should still consume ammo when target is out of range", () => {
+      it("should fail without consuming ammo when target is out of range", () => {
         const { p1, p2, zone } = setupCombat();
         const currentId = zone.currentTurn;
         const target = currentId === "p1" ? p2 : p1;
@@ -659,9 +659,9 @@ describe("GameStateManager", () => {
         const energyBefore = laser.stats.energy!;
 
         const result = gm.processCombatAction(currentId, { type: "fireLaser", targetId: target.id });
-        expect(result.success).toBe(true);
-        expect(result.animation!.hit).toBe(false);
-        expect(laser.stats.energy).toBe(energyBefore - 1);
+        expect(result.success).toBe(false);
+        expect(result.message).toContain("out of range");
+        expect(laser.stats.energy).toBe(energyBefore);
       });
     });
 

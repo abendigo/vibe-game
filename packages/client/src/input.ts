@@ -431,10 +431,19 @@ export class InputHandler {
     this.sendDriveState();
   }
 
-  /** Compute nearest valid target for every vehicle. */
+  /** Compute nearest valid target for every vehicle (must be within weapon range). */
   private updateAutoTargets(): void {
     this.computedTargets.clear();
     for (const [id, player] of this.players) {
+      // Get max weapon range for this player
+      const maxRange = Math.max(
+        ...player.car.parts
+          .filter((p) => p.stats.weaponKind)
+          .map((p) => p.stats.range ?? 0),
+        0
+      );
+      if (maxRange <= 0) continue;
+
       let nearestId: string | null = null;
       let nearestDist = Infinity;
       for (const [otherId, other] of this.players) {
@@ -442,7 +451,7 @@ export class InputHandler {
         const dx = other.position.x - player.position.x;
         const dy = other.position.y - player.position.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist < nearestDist) {
+        if (dist <= maxRange && dist < nearestDist) {
           nearestDist = dist;
           nearestId = otherId;
         }
