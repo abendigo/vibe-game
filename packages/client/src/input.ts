@@ -40,6 +40,11 @@ export class InputHandler {
   combatZone: CombatZone | null = null;
   players: Map<string, Player> = new Map();
 
+  /** When true, all game input is suppressed (garage overlay open, etc.) */
+  inputBlocked = false;
+  /** Callback for Escape key when input is blocked (e.g. close garage) */
+  onBlockedEscape: (() => void) | null = null;
+
   constructor(network: Network, renderer: Renderer) {
     this.network = network;
     this.renderer = renderer;
@@ -52,6 +57,14 @@ export class InputHandler {
     window.addEventListener("keydown", (e) => {
       // Ignore key repeats -- one press = one step
       if (e.repeat) return;
+
+      // When input is blocked (e.g. garage overlay), only allow Escape
+      if (this.inputBlocked) {
+        if (e.key === "Escape" && this.onBlockedEscape) {
+          this.onBlockedEscape();
+        }
+        return;
+      }
 
       const key = e.key.toLowerCase();
       const inCombatTurn = this.isInCombat && this.isMyTurn;

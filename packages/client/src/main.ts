@@ -2,8 +2,10 @@ import { Application, Ticker } from "pixi.js";
 import {
   type GameState,
   type Player,
+  type Vec2,
   GamePhase,
   deserializeGameState,
+  WORLD_MAP,
 } from "@game/shared";
 import { Network } from "./network.js";
 import { Renderer } from "./renderer.js";
@@ -59,6 +61,37 @@ let localPlayerName: string | null = null;
 const STORAGE_KEY_TOKEN = "game_session_token";
 const STORAGE_KEY_NAME = "game_player_name";
 
+// ── Garage overlay ──
+
+let garageOpen = false;
+const garageZone = WORLD_MAP.garageZone;
+
+function isInGarageZone(pos: Vec2): boolean {
+  return (
+    pos.x >= garageZone.x &&
+    pos.x <= garageZone.x + garageZone.width &&
+    pos.y >= garageZone.y &&
+    pos.y <= garageZone.y + garageZone.height
+  );
+}
+
+// These get wired to the input handler after it's created
+let blockInput: (blocked: boolean) => void = () => {};
+
+function openGarage(): void {
+  if (garageOpen) return;
+  garageOpen = true;
+  document.getElementById("garage-overlay")?.classList.remove("hidden");
+  blockInput(true);
+}
+
+function closeGarage(): void {
+  if (!garageOpen) return;
+  garageOpen = false;
+  document.getElementById("garage-overlay")?.classList.add("hidden");
+  blockInput(false);
+}
+
 async function main(): Promise<void> {
   // Initialize Pixi
   await renderer.init();
@@ -66,6 +99,10 @@ async function main(): Promise<void> {
 
   // Set up input handler
   const input = new InputHandler(network, renderer);
+  blockInput = (blocked) => {
+    input.inputBlocked = blocked;
+  };
+  input.onBlockedEscape = () => closeGarage();
 
   // Login screen elements
   const loginScreen = document.getElementById("login-screen")!;
@@ -330,9 +367,16 @@ async function main(): Promise<void> {
     versionEl.textContent = __APP_VERSION__;
   }
 
+  // Garage close button
+  document.getElementById("btn-garage-close")?.addEventListener("click", () => {
+    closeGarage();
+  });
+
   // Game loop: send input, tick animations, update gauges and ghost preview every frame
   renderer.app.ticker.add((ticker) => {
-    input.tick();
+    if (!garageOpen) {
+      input.tick();
+    }
     renderer.tickAnimations(ticker.deltaMS);
     renderer.updateDriveGauges(input.driveState, input.maxSpeed);
     renderer.updateGhostPreview(
@@ -347,6 +391,20 @@ async function main(): Promise<void> {
       const localPlayer = gameState.players.get(localPlayerId);
       if (localPlayer) {
         renderer.updateWorldMapMarker(localPlayer.position);
+      }
+    }
+
+    // Garage zone detection: open when stopped inside, close when outside
+    if (localPlayerId) {
+      const localPlayer = gameState.players.get(localPlayerId);
+      if (localPlayer) {
+        const inZone = isInGarageZone(localPlayer.position);
+        const stopped = localPlayer.velocity.speed === 0;
+        if (inZone && stopped && !garageOpen) {
+          openGarage();
+        } else if (!inZone && garageOpen) {
+          closeGarage();
+        }
       }
     }
   });

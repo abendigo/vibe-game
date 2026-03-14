@@ -296,6 +296,59 @@
         margin-top: 8px;
       }
 
+      /* Garage overlay */
+      #garage-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.9);
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        z-index: 50;
+        font-family: monospace;
+        color: #fff;
+      }
+      #garage-overlay.hidden { display: none; }
+      #garage-box {
+        background: rgba(255,255,255,0.05);
+        border: 1px solid #444;
+        border-radius: 12px;
+        padding: 40px 60px;
+        min-width: 400px;
+        text-align: center;
+      }
+      #garage-box h2 {
+        font-size: 22px;
+        margin-bottom: 8px;
+        color: #e8c840;
+        font-weight: normal;
+      }
+      #garage-box .garage-subtitle {
+        font-size: 12px;
+        color: #666;
+        margin-bottom: 24px;
+      }
+      #garage-box .garage-placeholder {
+        color: #555;
+        font-size: 14px;
+        padding: 40px 0;
+        border: 1px dashed #333;
+        border-radius: 8px;
+        margin-bottom: 24px;
+      }
+      #garage-box button {
+        padding: 8px 20px;
+        background: #333;
+        color: #fff;
+        border: 1px solid #666;
+        border-radius: 4px;
+        font-family: monospace;
+        font-size: 14px;
+        cursor: pointer;
+      }
+      #garage-box button:hover { background: #555; }
+
       /* Login screen */
       #login-screen {
         position: fixed;
@@ -442,6 +495,14 @@
     <div id="world-map-overlay" class="hidden">
       <canvas id="world-map-canvas"></canvas>
       <div id="world-map-label">World Map [M]</div>
+    </div>
+    <div id="garage-overlay" class="hidden">
+      <div id="garage-box">
+        <h2>Garage</h2>
+        <div class="garage-subtitle">Truckstop Repair Bay</div>
+        <div class="garage-placeholder">No customizations available yet.</div>
+        <button id="btn-garage-close">Leave Garage [Esc]</button>
+      </div>
     </div>
     <div id="version-display"></div>
     <script type="module" src="/src/main.ts"></script>

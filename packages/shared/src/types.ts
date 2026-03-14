@@ -53,11 +53,19 @@ export interface TownDef {
   spawnPoint: Vec2;       // world pixel coordinates
 }
 
+export interface GarageZone {
+  x: number;       // world pixel, top-left
+  y: number;
+  width: number;   // world pixels
+  height: number;
+}
+
 export interface WorldMapData {
   tiles: TileType[][];
   towns: TownDef[];
   buildings: BuildingDef[]; // all buildings from all towns
   circuitWaypoints: Vec2[]; // inter-town circuit waypoints (world pixel coordinates)
+  garageZone: GarageZone;   // interactive zone that opens car customization
 }
 
 export enum CarPartType {

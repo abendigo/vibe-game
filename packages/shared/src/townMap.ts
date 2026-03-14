@@ -235,10 +235,26 @@ function buildWorldGrid(): TileType[][] {
   connectTowns(tiles, dusthaven, oasis);
   connectTowns(tiles, ironworks, oasis);
 
+  // ── Truckstop on the Ironworks→Oasis road ──
+  // Road runs at rows 139-140, cols 60-142. Truckstop at midpoint.
+  // Parking lot: cols 96-107, rows 135-140 (connects to road)
+  paintRect(tiles, 96, 135, 12, 6, TileType.Road);
+  // Main building: cols 98-105, rows 132-134
+  paintRect(tiles, 98, 132, 8, 3, TileType.Building);
+  // Garage bay: cols 100-103, rows 135-136 (distinct color, interaction zone)
+  paintRect(tiles, 100, 135, 4, 2, TileType.Building);
+
   return tiles;
 }
 
 const worldTiles = buildWorldGrid();
+
+// ── Truckstop buildings ──
+
+const truckstopBuildings: BuildingDef[] = [
+  { x: 98, y: 132, width: 8, height: 3, color: 0xb05030, name: "Truckstop" },
+  { x: 100, y: 135, width: 4, height: 2, color: 0xe8c840, name: "Garage" },
+];
 
 // ── Precomputed building color lookup by tile coordinate ──
 
@@ -246,6 +262,7 @@ const allBuildings = [
   ...dusthaven.buildings,
   ...ironworks.buildings,
   ...oasis.buildings,
+  ...truckstopBuildings,
 ];
 
 const buildingColorMap = new Map<string, number>();
@@ -325,6 +342,12 @@ export const WORLD_MAP: WorldMapData = {
   towns: [dusthaven, ironworks, oasis],
   buildings: allBuildings,
   circuitWaypoints,
+  garageZone: {
+    x: 100 * S,   // tile col 100 → 10000px
+    y: 135 * S,   // tile row 135 → 13500px
+    width: 4 * S,  // 4 tiles wide → 400px
+    height: 2 * S, // 2 tiles tall → 200px
+  },
 };
 
 // Backward-compatible export — uses the first town (Dusthaven) data

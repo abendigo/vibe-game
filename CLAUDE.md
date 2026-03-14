@@ -221,6 +221,10 @@ packages/
 
 - **Visibility**: Server filters player data per-client — only sends players within `VISIBILITY_RADIUS` (2200px). Combat participants are always included regardless of distance. 200px buffer between data radius and minimap radius prevents pop-in.
 
+- **Truckstop**: Located on the Ironworks→Oasis road at the midpoint. Includes a parking lot (Road tiles, cols 96-107, rows 135-140), main building (cols 98-105, rows 132-134, color 0xb05030), and a garage bay (cols 100-103, rows 135-136, color 0xe8c840).
+
+- **Garage zone**: `GarageZone` in `WORLD_MAP` defines a world-pixel rectangle over the garage bay. When the local player is stopped inside this zone, a full-screen "Garage" overlay opens. Escape or clicking "Leave Garage" closes it. All game input is blocked while the overlay is open. No customization options yet — placeholder UI.
+
 - **Player spawn**: Dusthaven's south entry road area (~9950, 4400)
 
 - **Zoom**: Scroll wheel or +/-/Reset buttons (25%-300%, default 100%). Camera, minimap viewport, and screen-to-world all zoom-aware
