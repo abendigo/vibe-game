@@ -64,6 +64,7 @@ const STORAGE_KEY_NAME = "game_player_name";
 // ── Garage overlay ──
 
 let garageOpen = false;
+let garageDismissed = false; // prevents reopen until player leaves the zone
 const garageZone = WORLD_MAP.garageZone;
 
 function isInGarageZone(pos: Vec2): boolean {
@@ -88,6 +89,7 @@ function openGarage(): void {
 function closeGarage(): void {
   if (!garageOpen) return;
   garageOpen = false;
+  garageDismissed = true;
   document.getElementById("garage-overlay")?.classList.add("hidden");
   blockInput(false);
 }
@@ -400,10 +402,11 @@ async function main(): Promise<void> {
       if (localPlayer) {
         const inZone = isInGarageZone(localPlayer.position);
         const stopped = localPlayer.velocity.speed === 0;
-        if (inZone && stopped && !garageOpen) {
+        if (inZone && stopped && !garageOpen && !garageDismissed) {
           openGarage();
-        } else if (!inZone && garageOpen) {
-          closeGarage();
+        } else if (!inZone) {
+          if (garageOpen) closeGarage();
+          garageDismissed = false; // reset once player leaves the zone
         }
       }
     }
