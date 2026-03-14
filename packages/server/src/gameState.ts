@@ -11,7 +11,6 @@ import {
   type CombatAction,
   CarPartType,
   WeaponKind,
-  TileType,
   PHYSICS,
   simulatePhysics,
   WORLD_MAP,
@@ -265,14 +264,6 @@ export class GameStateManager {
     return player.car.baseSpeed + speedBonus;
   }
 
-  /** Check if a world-pixel position is on a road tile. */
-  private isOnRoad(pos: Vec2): boolean {
-    const col = Math.floor(pos.x / PHYSICS.TILE_SIZE);
-    const row = Math.floor(pos.y / PHYSICS.TILE_SIZE);
-    if (row < 0 || row >= PHYSICS.MAP_TILES || col < 0 || col >= PHYSICS.MAP_TILES) return false;
-    return WORLD_MAP.tiles[row][col] === TileType.Road;
-  }
-
   /** Apply physics for a single player. Returns distance moved. */
   private applyPhysics(player: Player): number {
     const maxSpeed = this.getEffectiveSpeed(player);
@@ -324,21 +315,8 @@ export class GameStateManager {
       // Combat players don't move via tick loop — they use preview-then-confirm
       if (this.isInCombat(id)) continue;
 
-      // Save position for NPCs so we can revert if they go off-road
-      const prevPos = player.isNPC ? { ...player.position } : null;
-      const prevHeading = player.isNPC ? player.velocity.heading : 0;
-      const prevSpeed = player.isNPC ? player.velocity.speed : 0;
-
       // Non-combat player: free movement
       this.applyPhysics(player);
-
-      // NPCs must stay on roads — revert if they drifted off
-      if (player.isNPC && prevPos && !this.isOnRoad(player.position)) {
-        player.position = prevPos;
-        player.velocity.heading = prevHeading;
-        player.velocity.speed = prevSpeed;
-        player.rotation = prevHeading;
-      }
 
       // Check if player entered an active combat zone
       if (zone && !zone.combatantIds.includes(id)) {

@@ -279,60 +279,49 @@ export function getBuildingColor(row: number, col: number): number | undefined {
 }
 
 // ── Inter-town circuit waypoints ──
-// The circuit NPC visits each town's road center, with intermediate waypoints
-// at the L-bends of the connecting roads. Route: Dusthaven → Ironworks → Oasis → repeat.
-// Road center within a town = tile (origin + 20, origin + 20) in pixel coords.
+// Dense waypoints that trace the actual road tiles so the courier never cuts
+// across grass. Route: Dusthaven → Ironworks → Oasis → Dusthaven (loop).
+//
+// Road geometry (all 2-tile-wide):
+//   Town entry roads at local cols/rows 19-20, cross streets at 19-20.
+//   D→I road: horizontal at rows 50-51 (cols 39-100), vertical at cols 39-40 (rows 50-121)
+//   D→O road: horizontal at rows 50-51 (cols 99-160), vertical at cols 159-160 (rows 50-121)
+//   I→O road: horizontal at rows 139-140 (cols 60-141)
+// Road center = +1 tile from the starting edge of the 2-tile span.
 
-function townRoadCenter(origin: Vec2): Vec2 {
-  return { x: (origin.x + 20) * S, y: (origin.y + 20) * S };
+// Helper: center pixel of a 2-tile-wide road at given tile col/row
+function roadCenter(col: number, row: number): Vec2 {
+  return { x: (col + 1) * S, y: (row + 1) * S };
 }
 
-// Compute L-bend waypoints for the connecting roads.
-// connectTowns paints: horizontal at startRow, then vertical at endCol.
-// The bend is at (endCol, startRow) in tile coords.
-function computeRoadBend(townA: TownDef, townB: TownDef): Vec2 {
-  const aCenterCol = townA.tileOrigin.x + TOWN_TILES / 2;
-  const aCenterRow = townA.tileOrigin.y + TOWN_TILES / 2;
-  const bCenterCol = townB.tileOrigin.x + TOWN_TILES / 2;
-  const bCenterRow = townB.tileOrigin.y + TOWN_TILES / 2;
-  const dx = bCenterCol - aCenterCol;
-  const dy = bCenterRow - aCenterRow;
-
-  let endCol: number, startRow: number;
-  if (Math.abs(dx) > Math.abs(dy)) {
-    if (dx > 0) {
-      endCol = townB.tileOrigin.x;
-      startRow = townA.tileOrigin.y + 19;
-    } else {
-      endCol = townB.tileOrigin.x + TOWN_TILES;
-      startRow = townA.tileOrigin.y + 19;
-    }
-  } else {
-    if (dy > 0) {
-      endCol = townB.tileOrigin.x + 19;
-      startRow = townA.tileOrigin.y + TOWN_TILES;
-    } else {
-      endCol = townB.tileOrigin.x + 19;
-      startRow = townA.tileOrigin.y;
-    }
-  }
-  // Center of the 2-tile-wide road at the bend
-  return { x: (endCol + 1) * S, y: (startRow + 1) * S };
-}
+// Town cross-street intersection centers (tile origin + 19/20 in each axis)
+const dusthavenCenter: Vec2 = { x: (dusthavenOrigin.x + 20) * S, y: (dusthavenOrigin.y + 20) * S };
+const ironworksCenter: Vec2 = { x: (ironworksOrigin.x + 20) * S, y: (ironworksOrigin.y + 20) * S };
+const oasisCenter: Vec2     = { x: (oasisOrigin.x + 20) * S, y: (oasisOrigin.y + 20) * S };
 
 const circuitWaypoints: Vec2[] = [
-  // Dusthaven center
-  townRoadCenter(dusthavenOrigin),
-  // Bend on Dusthaven→Ironworks road
-  computeRoadBend(dusthaven, ironworks),
-  // Ironworks center
-  townRoadCenter(ironworksOrigin),
-  // Bend on Ironworks→Oasis road
-  computeRoadBend(ironworks, oasis),
-  // Oasis center
-  townRoadCenter(oasisOrigin),
-  // Bend on Oasis→Dusthaven (reverse of Dusthaven→Oasis)
-  computeRoadBend(oasis, dusthaven),
+  // ── Dusthaven ──
+  dusthavenCenter,                                        // cross-street center
+
+  // ── Dusthaven → Ironworks (south exit, horizontal west, vertical south) ──
+  { x: dusthavenCenter.x, y: (dusthavenOrigin.y + TOWN_TILES) * S },  // south exit of town
+  roadCenter(ironworksOrigin.x + 19, dusthavenOrigin.y + TOWN_TILES),  // L-bend (west end of horizontal / top of vertical)
+  { x: (ironworksOrigin.x + 20) * S, y: ironworksOrigin.y * S },       // Ironworks north entry
+
+  // ── Ironworks ──
+  ironworksCenter,                                        // cross-street center
+
+  // ── Ironworks → Oasis (east exit, straight horizontal east) ──
+  { x: (ironworksOrigin.x + TOWN_TILES) * S, y: ironworksCenter.y },   // east exit of town
+  { x: oasisOrigin.x * S, y: oasisCenter.y },                           // Oasis west entry
+
+  // ── Oasis ──
+  oasisCenter,                                            // cross-street center
+
+  // ── Oasis → Dusthaven (north exit, vertical north, horizontal east to Dusthaven south) ──
+  { x: oasisCenter.x, y: oasisOrigin.y * S },                           // north exit of town
+  roadCenter(oasisOrigin.x + 19, dusthavenOrigin.y + TOWN_TILES),       // L-bend (top of vertical / east end of horizontal)
+  { x: dusthavenCenter.x, y: (dusthavenOrigin.y + TOWN_TILES) * S },    // Dusthaven south entry
 ];
 
 // ── Exports ──
