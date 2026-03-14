@@ -4,36 +4,42 @@ let playerCounter = 0;
 
 /**
  * Create a unique player name to avoid collisions between tests.
+ * Kept under 24 characters to fit the login input's maxlength.
  */
-export function uniqueName(prefix = "Player"): string {
-  return `${prefix}_${Date.now()}_${++playerCounter}`;
+export function uniqueName(prefix = "P"): string {
+  // Use last 6 digits of timestamp + counter for short unique names
+  const ts = Date.now() % 1_000_000;
+  return `${prefix}${ts}_${++playerCounter}`;
 }
 
 /**
- * Override window.prompt to auto-respond with name and password,
- * then navigate to the page and wait for the canvas to appear.
+ * Navigate to the game, fill the login form, submit, and wait for
+ * authentication to complete (login screen removed + game state received).
  */
 export async function joinGame(
   page: Page,
   name: string,
   password = "testpass"
 ): Promise<void> {
-  let promptCount = 0;
-  await page.addInitScript(
-    ({ name, password }) => {
-      let count = 0;
-      window.prompt = () => {
-        count++;
-        return count === 1 ? name : password;
-      };
-    },
-    { name, password }
-  );
-
   await page.goto("/");
   await page.waitForSelector("canvas", { timeout: 10_000 });
-  // Give the WebSocket time to connect and auth to complete
-  await page.waitForTimeout(500);
+
+  // Fill and submit the login form
+  await page.fill("#login-name", name);
+  await page.fill("#login-password", password);
+  await page.click("#login-btn");
+
+  // Wait for login screen to disappear (removed from DOM on successful auth)
+  await page.waitForFunction(
+    () => !document.getElementById("login-screen"),
+    { timeout: 10_000 }
+  );
+
+  // Wait for game state to be received (player position set)
+  await page.waitForFunction(
+    () => (window as any).__TEST_PLAYER_POSITION__ != null,
+    { timeout: 10_000 }
+  );
 }
 
 /**

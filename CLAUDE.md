@@ -90,6 +90,8 @@ packages/
 
 - **Git discipline**: Before making any code changes, check `git status` for uncommitted changes. If there are any, stop and tell the user — do not proceed. After completing changes, create a git commit with a descriptive message explaining what was done.
 
+- **Always run E2E tests**: After every change, run `npm run test:e2e` in addition to `npm test`. E2E tests use Playwright to verify the full login flow, movement, and combat through a real browser. Both must pass before committing.
+
 ## Conventions
 - TypeScript strict mode everywhere
 - ES2022 target, NodeNext module resolution
