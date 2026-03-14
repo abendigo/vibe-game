@@ -434,31 +434,34 @@ export class InputHandler {
   /** Compute nearest valid target for every vehicle (must be within weapon range). */
   private updateAutoTargets(): void {
     this.computedTargets.clear();
-    for (const [id, player] of this.players) {
-      // Get max weapon range for this player
-      const maxRange = Math.max(
-        ...player.car.parts
-          .filter((p) => p.stats.weaponKind)
-          .map((p) => p.stats.range ?? 0),
-        0
-      );
-      if (maxRange <= 0) continue;
 
-      let nearestId: string | null = null;
-      let nearestDist = Infinity;
-      for (const [otherId, other] of this.players) {
-        if (otherId === id) continue;
-        const dx = other.position.x - player.position.x;
-        const dy = other.position.y - player.position.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist <= maxRange && dist < nearestDist) {
-          nearestDist = dist;
-          nearestId = otherId;
-        }
+    // Only compute for local player (non-local entries aren't rendered anyway)
+    if (!this.localPlayerId) return;
+    const localPlayer = this.players.get(this.localPlayerId);
+    if (!localPlayer) return;
+
+    const maxRange = Math.max(
+      ...localPlayer.car.parts
+        .filter((p) => p.stats.weaponKind)
+        .map((p) => p.stats.range ?? 0),
+      0
+    );
+    if (maxRange <= 0) return;
+
+    let nearestId: string | null = null;
+    let nearestDist = Infinity;
+    for (const [otherId, other] of this.players) {
+      if (otherId === this.localPlayerId) continue;
+      const dx = other.position.x - localPlayer.position.x;
+      const dy = other.position.y - localPlayer.position.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist <= maxRange && dist < nearestDist) {
+        nearestDist = dist;
+        nearestId = otherId;
       }
-      if (nearestId) {
-        this.computedTargets.set(id, nearestId);
-      }
+    }
+    if (nearestId) {
+      this.computedTargets.set(this.localPlayerId, nearestId);
     }
   }
 
