@@ -87,6 +87,7 @@ export class GameStateManager {
   state: GameState;
   playerDriveStates: Map<string, DriveState> = new Map();
   private npcWaypointIndex: Map<string, number> = new Map();
+  private npcWaypoints: Map<string, Vec2[]> = new Map();
 
   constructor() {
     this.state = {
@@ -114,8 +115,7 @@ export class GameStateManager {
     return player;
   }
 
-  addNPC(id: string, name: string): Player {
-    const waypoints = WORLD_MAP.towns[0].npcWaypoints;
+  addNPC(id: string, name: string, waypoints: Vec2[]): Player {
     const player: Player = {
       id,
       name,
@@ -129,13 +129,14 @@ export class GameStateManager {
     };
     this.state.players.set(id, player);
     this.npcWaypointIndex.set(id, 0);
+    this.npcWaypoints.set(id, waypoints);
     this.playerDriveStates.set(id, { targetSpeed: 3, steeringAngle: 0 });
     return player;
   }
 
-  /** NPC steers toward next waypoint on the road loop. */
+  /** NPC steers toward next waypoint on its assigned route. */
   private computeNPCDriveState(player: Player): DriveState {
-    const waypoints = WORLD_MAP.towns[0].npcWaypoints;
+    const waypoints = this.npcWaypoints.get(player.id) ?? WORLD_MAP.towns[0].npcWaypoints;
     let wpIndex = this.npcWaypointIndex.get(player.id) ?? 0;
     const target = waypoints[wpIndex];
 

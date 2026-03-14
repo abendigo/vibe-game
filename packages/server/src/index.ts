@@ -537,9 +537,17 @@ async function start(): Promise<void> {
     credentials = saveData.credentials ?? {};
   }
 
-  // Spawn NPC practice target
-  const npc = gameState.addNPC("npc-target", "Target Dummy");
-  console.log(`NPC "${npc.name}" spawned at (${npc.position.x}, ${npc.position.y})`);
+  // Spawn one NPC per town (patrols that town's road loop)
+  const towns = WORLD_MAP.towns;
+  const townNPCNames = ["Dusty", "Ironclad", "Mirage"];
+  for (let i = 0; i < towns.length; i++) {
+    const npc = gameState.addNPC(`npc-town-${i}`, townNPCNames[i], towns[i].npcWaypoints);
+    console.log(`NPC "${npc.name}" spawned in ${towns[i].name} at (${Math.round(npc.position.x)}, ${Math.round(npc.position.y)})`);
+  }
+
+  // Spawn circuit NPC that visits all towns
+  const courier = gameState.addNPC("npc-courier", "Courier", WORLD_MAP.circuitWaypoints);
+  console.log(`NPC "${courier.name}" spawned at (${Math.round(courier.position.x)}, ${Math.round(courier.position.y)})`);
 
   // Start auto-save (every 30s + on shutdown)
   startAutoSave(gameState, () => credentials);

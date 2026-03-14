@@ -227,18 +227,18 @@ packages/
 
 ## NPC System
 
-- **Practice NPC**: "Target Dummy" — follows a waypoint circuit along the main road loop
+- **Town NPCs**: One NPC per town — "Dusty" (Dusthaven), "Ironclad" (Ironworks), "Mirage" (Oasis). Each patrols their town's road loop using that town's `npcWaypoints`.
+
+- **Circuit NPC**: "Courier" — visits all 3 towns in a loop via `WORLD_MAP.circuitWaypoints` (town centers + L-bend waypoints on connecting roads). ID: `"npc-courier"`.
 
 - `Player.isNPC?: boolean` flag distinguishes NPCs from human players
 
-- `addNPC()` creates an NPC at the first waypoint with initial velocity
+- `addNPC(id, name, waypoints)` creates an NPC at the first waypoint with initial velocity. Each NPC stores its own waypoint list in `npcWaypoints` map.
 
-- **Exploration**: `tickNPCInput()` runs each server tick. `computeNPCDriveState()` steers toward the next waypoint (discrete 5° steps). Advances to next waypoint when within 80px threshold. Waypoints defined in `WORLD_MAP.towns[0].npcWaypoints` (8 points, clockwise around Dusthaven's main loop)
+- **Exploration**: `tickNPCInput()` runs each server tick. `computeNPCDriveState()` steers toward the next waypoint using the NPC's assigned route (discrete 5° steps). Advances to next waypoint when within 80px threshold.
 
 - **Combat AI**: When it's the NPC's turn, `processNPCTurn()` fires back 25% of the time (prefers laser, falls back to projectile), otherwise waits. 1-second delay before acting for natural feel
 
 - **Turn scheduling**: `scheduleNPCTurn()` is called after every turn change; uses a timer to auto-process NPC turns
 
 - NPCs are rendered with orange `[NPC]` name tag on the client
-
-- NPC is spawned on server start with id `"npc-target"`

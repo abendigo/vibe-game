@@ -261,12 +261,70 @@ export function getBuildingColor(row: number, col: number): number | undefined {
   return buildingColorMap.get(`${row},${col}`);
 }
 
+// ── Inter-town circuit waypoints ──
+// The circuit NPC visits each town's road center, with intermediate waypoints
+// at the L-bends of the connecting roads. Route: Dusthaven → Ironworks → Oasis → repeat.
+// Road center within a town = tile (origin + 20, origin + 20) in pixel coords.
+
+function townRoadCenter(origin: Vec2): Vec2 {
+  return { x: (origin.x + 20) * S, y: (origin.y + 20) * S };
+}
+
+// Compute L-bend waypoints for the connecting roads.
+// connectTowns paints: horizontal at startRow, then vertical at endCol.
+// The bend is at (endCol, startRow) in tile coords.
+function computeRoadBend(townA: TownDef, townB: TownDef): Vec2 {
+  const aCenterCol = townA.tileOrigin.x + TOWN_TILES / 2;
+  const aCenterRow = townA.tileOrigin.y + TOWN_TILES / 2;
+  const bCenterCol = townB.tileOrigin.x + TOWN_TILES / 2;
+  const bCenterRow = townB.tileOrigin.y + TOWN_TILES / 2;
+  const dx = bCenterCol - aCenterCol;
+  const dy = bCenterRow - aCenterRow;
+
+  let endCol: number, startRow: number;
+  if (Math.abs(dx) > Math.abs(dy)) {
+    if (dx > 0) {
+      endCol = townB.tileOrigin.x;
+      startRow = townA.tileOrigin.y + 19;
+    } else {
+      endCol = townB.tileOrigin.x + TOWN_TILES;
+      startRow = townA.tileOrigin.y + 19;
+    }
+  } else {
+    if (dy > 0) {
+      endCol = townB.tileOrigin.x + 19;
+      startRow = townA.tileOrigin.y + TOWN_TILES;
+    } else {
+      endCol = townB.tileOrigin.x + 19;
+      startRow = townA.tileOrigin.y;
+    }
+  }
+  // Center of the 2-tile-wide road at the bend
+  return { x: (endCol + 1) * S, y: (startRow + 1) * S };
+}
+
+const circuitWaypoints: Vec2[] = [
+  // Dusthaven center
+  townRoadCenter(dusthavenOrigin),
+  // Bend on Dusthaven→Ironworks road
+  computeRoadBend(dusthaven, ironworks),
+  // Ironworks center
+  townRoadCenter(ironworksOrigin),
+  // Bend on Ironworks→Oasis road
+  computeRoadBend(ironworks, oasis),
+  // Oasis center
+  townRoadCenter(oasisOrigin),
+  // Bend on Oasis→Dusthaven (reverse of Dusthaven→Oasis)
+  computeRoadBend(oasis, dusthaven),
+];
+
 // ── Exports ──
 
 export const WORLD_MAP: WorldMapData = {
   tiles: worldTiles,
   towns: [dusthaven, ironworks, oasis],
   buildings: allBuildings,
+  circuitWaypoints,
 };
 
 // Backward-compatible export — uses the first town (Dusthaven) data

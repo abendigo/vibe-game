@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { GameStateManager } from "./gameState.js";
-import { GamePhase, PHYSICS } from "@game/shared";
+import { GamePhase, PHYSICS, WORLD_MAP } from "@game/shared";
 
 describe("GameStateManager", () => {
   let gm: GameStateManager;
@@ -925,19 +925,19 @@ describe("GameStateManager", () => {
   describe("NPC", () => {
     describe("addNPC", () => {
       it("should create an NPC player with isNPC flag", () => {
-        const npc = gm.addNPC("npc1", "Target Dummy");
+        const npc = gm.addNPC("npc1", "Target Dummy", WORLD_MAP.towns[0].npcWaypoints);
         expect(npc.isNPC).toBe(true);
         expect(npc.name).toBe("Target Dummy");
         expect(gm.state.players.get("npc1")).toBe(npc);
       });
 
       it("should set initial velocity for circling", () => {
-        const npc = gm.addNPC("npc1", "Target Dummy");
+        const npc = gm.addNPC("npc1", "Target Dummy", WORLD_MAP.towns[0].npcWaypoints);
         expect(npc.velocity.speed).toBe(3);
       });
 
       it("should set initial drive state with steeringAngle", () => {
-        gm.addNPC("npc1", "Target Dummy");
+        gm.addNPC("npc1", "Target Dummy", WORLD_MAP.towns[0].npcWaypoints);
         const ds = gm.playerDriveStates.get("npc1");
         expect(ds).toBeDefined();
         expect(ds!.targetSpeed).toBe(3);
@@ -947,7 +947,7 @@ describe("GameStateManager", () => {
 
     describe("tickNPCInput", () => {
       it("should update NPC drive state to maintain circle", () => {
-        const npc = gm.addNPC("npc1", "Target Dummy");
+        const npc = gm.addNPC("npc1", "Target Dummy", WORLD_MAP.towns[0].npcWaypoints);
         gm.tickNPCInput();
         const ds = gm.playerDriveStates.get("npc1");
         expect(ds).toBeDefined();
@@ -955,7 +955,7 @@ describe("GameStateManager", () => {
       });
 
       it("should not update NPC when in combat", () => {
-        const npc = gm.addNPC("npc1", "Target Dummy");
+        const npc = gm.addNPC("npc1", "Target Dummy", WORLD_MAP.towns[0].npcWaypoints);
         const p1 = gm.addPlayer("p1", "Alice");
         // Place both near each other
         npc.position = { x: 500, y: 500 };
@@ -975,12 +975,12 @@ describe("GameStateManager", () => {
 
     describe("processNPCTurn", () => {
       it("should return null when no combat is active", () => {
-        gm.addNPC("npc1", "Target Dummy");
+        gm.addNPC("npc1", "Target Dummy", WORLD_MAP.towns[0].npcWaypoints);
         expect(gm.processNPCTurn()).toBeNull();
       });
 
       it("should return null when it is not the NPC's turn", () => {
-        const npc = gm.addNPC("npc1", "Target Dummy");
+        const npc = gm.addNPC("npc1", "Target Dummy", WORLD_MAP.towns[0].npcWaypoints);
         const p1 = gm.addPlayer("p1", "Alice");
         npc.position = { x: 500, y: 500 };
         p1.position = { x: 510, y: 500 };
@@ -994,7 +994,7 @@ describe("GameStateManager", () => {
       });
 
       it("should move and take a combat action when it is the NPC's turn", () => {
-        const npc = gm.addNPC("npc1", "Target Dummy");
+        const npc = gm.addNPC("npc1", "Target Dummy", WORLD_MAP.towns[0].npcWaypoints);
         const p1 = gm.addPlayer("p1", "Alice");
         npc.position = { x: 500, y: 500 };
         p1.position = { x: 510, y: 500 };
@@ -1025,7 +1025,7 @@ describe("GameStateManager", () => {
 
         for (let i = 0; i < iterations; i++) {
           const gm2 = new GameStateManager();
-          const npc = gm2.addNPC("npc1", "Target Dummy");
+          const npc = gm2.addNPC("npc1", "Target Dummy", WORLD_MAP.towns[0].npcWaypoints);
           const p1 = gm2.addPlayer("p1", "Alice");
           npc.position = { x: 500, y: 500 };
           p1.position = { x: 510, y: 500 };

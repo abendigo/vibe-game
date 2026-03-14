@@ -57,6 +57,7 @@ export interface WorldMapData {
   tiles: TileType[][];
   towns: TownDef[];
   buildings: BuildingDef[]; // all buildings from all towns
+  circuitWaypoints: Vec2[]; // inter-town circuit waypoints (world pixel coordinates)
 }
 
 export enum CarPartType {
