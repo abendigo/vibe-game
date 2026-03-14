@@ -1,6 +1,6 @@
 import { Application, Container, Graphics, Text, TextStyle } from "pixi.js";
 import type { Player, GamePhase, CombatZone, WeaponAnimationData, Vec2, DriveState } from "@game/shared";
-import { PHYSICS, WeaponKind, simulatePhysics, TileType, TOWN_MAP, getBuildingColor } from "@game/shared";
+import { PHYSICS, WeaponKind, simulatePhysics, TileType, WORLD_MAP, getBuildingColor } from "@game/shared";
 import {
   GRID_SIZE,
   GRID_CELLS,
@@ -9,6 +9,7 @@ import {
   MINIMAP_SIZE,
   MINIMAP_PADDING,
   MINIMAP_SCALE,
+  MINIMAP_RADIUS,
   PLAYER_COLORS,
   screenToWorld as screenToWorldUtil,
   computeCameraPosition,
@@ -87,8 +88,7 @@ export class Renderer {
     // World container (camera moves this)
     this.app.stage.addChild(this.world);
 
-    // Draw grid
-    this.drawGrid();
+    // Grid (drawn each frame with viewport culling)
     this.world.addChild(this.gridGraphics);
 
     // Combat zone circle (rendered in world space, above grid, below players)
@@ -147,14 +147,35 @@ export class Renderer {
     if (el) el.textContent = `${Math.round(this.zoom * 100)}%`;
   }
 
-  private drawMinimapBackground(): void {
+  private lastMinimapTileCol = -1;
+  private lastMinimapTileRow = -1;
+
+  private drawMinimapBackground(centerPos?: Vec2): void {
     const g = this.minimapBgGraphics;
     g.clear();
-    const tiles = TOWN_MAP.tiles;
+
+    const tiles = WORLD_MAP.tiles;
     const mt = PHYSICS.MAP_TILES;
-    const tileSize = MINIMAP_SIZE / mt;
-    for (let row = 0; row < mt; row++) {
-      for (let col = 0; col < mt; col++) {
+    const ts = PHYSICS.TILE_SIZE;
+
+    // Center of minimap viewport in world coordinates
+    const cx = centerPos?.x ?? 0;
+    const cy = centerPos?.y ?? 0;
+
+    // Tile range to render on minimap (~40 tiles diameter = MINIMAP_RADIUS*2 / TILE_SIZE)
+    const tilesRadius = Math.ceil(MINIMAP_RADIUS / ts) + 1;
+    const centerTileCol = Math.floor(cx / ts);
+    const centerTileRow = Math.floor(cy / ts);
+
+    const minCol = Math.max(0, centerTileCol - tilesRadius);
+    const maxCol = Math.min(mt - 1, centerTileCol + tilesRadius);
+    const minRow = Math.max(0, centerTileRow - tilesRadius);
+    const maxRow = Math.min(mt - 1, centerTileRow + tilesRadius);
+
+    const center: Vec2 = { x: cx, y: cy };
+
+    for (let row = minRow; row <= maxRow; row++) {
+      for (let col = minCol; col <= maxCol; col++) {
         const tile = tiles[row][col];
         let color: number;
         switch (tile) {
@@ -167,25 +188,47 @@ export class Renderer {
           default:
             color = 0x2a4a2e;
         }
-        g.rect(col * tileSize, row * tileSize, tileSize, tileSize);
+        // Convert tile world position to minimap coordinates
+        const tileWorldX = col * ts;
+        const tileWorldY = row * ts;
+        const mm = worldToMinimap({ x: tileWorldX, y: tileWorldY }, center);
+        const tileMinimapSize = ts * MINIMAP_SCALE;
+        g.rect(mm.x, mm.y, tileMinimapSize, tileMinimapSize);
         g.fill({ color, alpha: 0.85 });
       }
     }
+
+    // Border
     g.rect(0, 0, MINIMAP_SIZE, MINIMAP_SIZE);
     g.stroke({ width: 1, color: 0x888888, alpha: 0.8 });
   }
 
-  private drawGrid(): void {
+  private lastGridCamX = NaN;
+  private lastGridCamY = NaN;
+  private lastGridZoom = NaN;
+
+  drawGrid(): void {
     const g = this.gridGraphics;
     g.clear();
 
-    const tiles = TOWN_MAP.tiles;
+    const tiles = WORLD_MAP.tiles;
     const ts = PHYSICS.TILE_SIZE;
     const mt = PHYSICS.MAP_TILES;
 
-    // Draw tiles
-    for (let row = 0; row < mt; row++) {
-      for (let col = 0; col < mt; col++) {
+    // Viewport culling: calculate visible tile range from camera
+    const camX = -this.world.position.x / this.zoom;
+    const camY = -this.world.position.y / this.zoom;
+    const viewW = this.app.canvas.width / this.zoom;
+    const viewH = this.app.canvas.height / this.zoom;
+
+    const startCol = Math.max(0, Math.floor(camX / ts) - 1);
+    const endCol = Math.min(mt - 1, Math.ceil((camX + viewW) / ts) + 1);
+    const startRow = Math.max(0, Math.floor(camY / ts) - 1);
+    const endRow = Math.min(mt - 1, Math.ceil((camY + viewH) / ts) + 1);
+
+    // Draw visible tiles only
+    for (let row = startRow; row <= endRow; row++) {
+      for (let col = startCol; col <= endCol; col++) {
         const tile = tiles[row][col];
         const x = col * ts;
         const y = row * ts;
@@ -207,20 +250,30 @@ export class Renderer {
       }
     }
 
-    // Building outlines
-    for (const b of TOWN_MAP.buildings) {
-      g.rect(b.x * ts, b.y * ts, b.width * ts, b.height * ts);
-      g.stroke({ width: 2, color: 0x111111, alpha: 0.6 });
+    // Building outlines (only visible buildings)
+    for (const b of WORLD_MAP.buildings) {
+      const bx = b.x * ts;
+      const by = b.y * ts;
+      const bw = b.width * ts;
+      const bh = b.height * ts;
+      // Check if building overlaps visible area
+      if (bx + bw >= startCol * ts && bx <= (endCol + 1) * ts &&
+          by + bh >= startRow * ts && by <= (endRow + 1) * ts) {
+        g.rect(bx, by, bw, bh);
+        g.stroke({ width: 2, color: 0x111111, alpha: 0.6 });
+      }
     }
 
-    // Subtle grid lines
-    const totalSize = mt * ts;
-    for (let i = 0; i <= mt; i++) {
-      const pos = i * ts;
-      g.moveTo(pos, 0);
-      g.lineTo(pos, totalSize);
-      g.moveTo(0, pos);
-      g.lineTo(totalSize, pos);
+    // Subtle grid lines (only in visible area)
+    for (let col = startCol; col <= endCol + 1; col++) {
+      const pos = col * ts;
+      g.moveTo(pos, startRow * ts);
+      g.lineTo(pos, (endRow + 1) * ts);
+    }
+    for (let row = startRow; row <= endRow + 1; row++) {
+      const pos = row * ts;
+      g.moveTo(startCol * ts, pos);
+      g.lineTo((endCol + 1) * ts, pos);
     }
     g.stroke({ width: 1, color: 0x3a3a5e, alpha: 0.2 });
   }
@@ -471,6 +524,9 @@ export class Renderer {
       }
     }
 
+    // Redraw grid with viewport culling (after camera update)
+    this.drawGrid();
+
     // Update HUD
     const phaseEl = document.getElementById("phase-display");
     if (phaseEl) phaseEl.textContent = `Phase: ${phase}`;
@@ -597,15 +653,34 @@ export class Renderer {
     const g = this.minimapGraphics;
     g.clear();
 
-    // Background tiles are pre-rendered in minimapBgGraphics
+    // Determine center of minimap (local player position)
+    let centerPos: Vec2 = { x: 0, y: 0 };
+    if (this.localPlayerId) {
+      const localPlayer = players.get(this.localPlayerId);
+      if (localPlayer) {
+        centerPos = localPlayer.position;
+      }
+    }
+
+    // Redraw minimap background only when player's tile position changes
+    const tileCol = Math.floor(centerPos.x / PHYSICS.TILE_SIZE);
+    const tileRow = Math.floor(centerPos.y / PHYSICS.TILE_SIZE);
+    if (tileCol !== this.lastMinimapTileCol || tileRow !== this.lastMinimapTileRow) {
+      this.lastMinimapTileCol = tileCol;
+      this.lastMinimapTileRow = tileRow;
+      this.drawMinimapBackground(centerPos);
+    }
 
     // Combat zone circle
     if (combatZone) {
-      const { cx, cy, cr } = computeMinimapCombatZone(combatZone);
-      g.circle(cx, cy, cr);
-      g.fill({ color: 0xff4444, alpha: 0.15 });
-      g.circle(cx, cy, cr);
-      g.stroke({ width: 1, color: 0xff4444, alpha: 0.8 });
+      const { cx, cy, cr } = computeMinimapCombatZone(combatZone, centerPos);
+      // Only draw if within minimap bounds
+      if (cx + cr >= 0 && cx - cr <= MINIMAP_SIZE && cy + cr >= 0 && cy - cr <= MINIMAP_SIZE) {
+        g.circle(cx, cy, cr);
+        g.fill({ color: 0xff4444, alpha: 0.15 });
+        g.circle(cx, cy, cr);
+        g.stroke({ width: 1, color: 0xff4444, alpha: 0.8 });
+      }
     }
 
     // Viewport rectangle
@@ -614,15 +689,19 @@ export class Renderer {
         this.world.position.x / this.zoom,
         this.world.position.y / this.zoom,
         this.app.canvas.width / this.zoom,
-        this.app.canvas.height / this.zoom
+        this.app.canvas.height / this.zoom,
+        centerPos
       );
       g.rect(vp.x, vp.y, vp.width, vp.height);
       g.stroke({ width: 1, color: 0xffffff, alpha: 0.5 });
     }
 
-    // Player dots
+    // Player dots (clip to minimap bounds)
     for (const [id, player] of players) {
-      const { x: mx, y: my } = worldToMinimap(player.position);
+      const { x: mx, y: my } = worldToMinimap(player.position, centerPos);
+      // Skip dots outside minimap
+      if (mx < -5 || mx > MINIMAP_SIZE + 5 || my < -5 || my > MINIMAP_SIZE + 5) continue;
+
       const color = this.getPlayerColor(id);
       const isLocal = id === this.localPlayerId;
 

@@ -4,11 +4,13 @@ import { WeaponKind } from "@game/shared";
 // ── Constants ──
 
 export const GRID_SIZE = 100;
-export const GRID_CELLS = 40;
-export const WORLD_SIZE = GRID_SIZE * GRID_CELLS; // 4000
+export const GRID_CELLS = 200;
+export const WORLD_SIZE = GRID_SIZE * GRID_CELLS; // 20000
 export const MINIMAP_SIZE = 150;
 export const MINIMAP_PADDING = 10;
-export const MINIMAP_SCALE = MINIMAP_SIZE / WORLD_SIZE;
+export const MINIMAP_RADIUS = 2000; // world pixels shown around player on minimap
+export const MINIMAP_DIAMETER = MINIMAP_RADIUS * 2; // 4000px viewport
+export const MINIMAP_SCALE = MINIMAP_SIZE / MINIMAP_DIAMETER;
 export const CAR_WIDTH = 30;
 export const CAR_HEIGHT = 20;
 export const PLAYER_COLORS = [0x4fc3f7, 0xef5350, 0x66bb6a, 0xffa726, 0xab47bc, 0xffee58];
@@ -51,10 +53,10 @@ export function assignPlayerColor(
   return { color, newIndex: colorIndex + 1 };
 }
 
-export function worldToMinimap(worldPos: Vec2): Vec2 {
+export function worldToMinimap(worldPos: Vec2, centerPos: Vec2): Vec2 {
   return {
-    x: worldPos.x * MINIMAP_SCALE,
-    y: worldPos.y * MINIMAP_SCALE,
+    x: (worldPos.x - centerPos.x + MINIMAP_RADIUS) * MINIMAP_SCALE,
+    y: (worldPos.y - centerPos.y + MINIMAP_RADIUS) * MINIMAP_SCALE,
   };
 }
 
@@ -62,22 +64,24 @@ export function computeMinimapViewport(
   worldOffsetX: number,
   worldOffsetY: number,
   canvasWidth: number,
-  canvasHeight: number
+  canvasHeight: number,
+  centerPos: Vec2
 ): { x: number; y: number; width: number; height: number } {
   return {
-    x: -worldOffsetX * MINIMAP_SCALE,
-    y: -worldOffsetY * MINIMAP_SCALE,
+    x: (-worldOffsetX - centerPos.x + MINIMAP_RADIUS) * MINIMAP_SCALE,
+    y: (-worldOffsetY - centerPos.y + MINIMAP_RADIUS) * MINIMAP_SCALE,
     width: canvasWidth * MINIMAP_SCALE,
     height: canvasHeight * MINIMAP_SCALE,
   };
 }
 
 export function computeMinimapCombatZone(
-  zone: CombatZone
+  zone: CombatZone,
+  centerPos: Vec2
 ): { cx: number; cy: number; cr: number } {
   return {
-    cx: zone.center.x * MINIMAP_SCALE,
-    cy: zone.center.y * MINIMAP_SCALE,
+    cx: (zone.center.x - centerPos.x + MINIMAP_RADIUS) * MINIMAP_SCALE,
+    cy: (zone.center.y - centerPos.y + MINIMAP_RADIUS) * MINIMAP_SCALE,
     cr: zone.radius * MINIMAP_SCALE,
   };
 }

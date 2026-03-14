@@ -78,42 +78,54 @@ describe("render-utils", () => {
   });
 
   describe("worldToMinimap", () => {
-    it("should scale world position to minimap coordinates", () => {
-      const result = worldToMinimap({ x: 1000, y: 1000 });
-      expect(result.x).toBeCloseTo(1000 * MINIMAP_SCALE);
-      expect(result.y).toBeCloseTo(1000 * MINIMAP_SCALE);
+    it("should scale world position to minimap coordinates relative to center", () => {
+      const center = { x: 5000, y: 5000 };
+      const result = worldToMinimap({ x: 6000, y: 6000 }, center);
+      // 6000 - 5000 + 2000 = 3000, 3000 * (150/4000) = 112.5
+      expect(result.x).toBeCloseTo(112.5);
+      expect(result.y).toBeCloseTo(112.5);
     });
 
-    it("should return origin for world origin", () => {
-      expect(worldToMinimap({ x: 0, y: 0 })).toEqual({ x: 0, y: 0 });
+    it("should place center at minimap center", () => {
+      const center = { x: 5000, y: 5000 };
+      const result = worldToMinimap({ x: 5000, y: 5000 }, center);
+      // 5000 - 5000 + 2000 = 2000, 2000 * (150/4000) = 75
+      expect(result.x).toBeCloseTo(75);
+      expect(result.y).toBeCloseTo(75);
     });
 
-    it("should map world edge to minimap edge", () => {
-      const result = worldToMinimap({ x: WORLD_SIZE, y: WORLD_SIZE });
+    it("should map edge of minimap radius to minimap edge", () => {
+      const center = { x: 5000, y: 5000 };
+      const result = worldToMinimap({ x: 7000, y: 7000 }, center);
+      // 7000 - 5000 + 2000 = 4000, 4000 * (150/4000) = 150
       expect(result.x).toBeCloseTo(150);
       expect(result.y).toBeCloseTo(150);
     });
   });
 
   describe("computeMinimapViewport", () => {
-    it("should compute correct viewport rect", () => {
+    it("should compute correct viewport rect relative to center", () => {
+      const center = { x: 5000, y: 5000 };
       // World offset of -100,-200 means camera shows from (100,200)
-      const vp = computeMinimapViewport(-100, -200, 800, 600);
-      expect(vp.x).toBeCloseTo(100 * MINIMAP_SCALE);
-      expect(vp.y).toBeCloseTo(200 * MINIMAP_SCALE);
+      const vp = computeMinimapViewport(-100, -200, 800, 600, center);
+      // x: (100 - 5000 + 2000) * scale = -2900 * scale
+      expect(vp.x).toBeCloseTo((-2900) * MINIMAP_SCALE);
+      expect(vp.y).toBeCloseTo((-2800) * MINIMAP_SCALE);
       expect(vp.width).toBeCloseTo(800 * MINIMAP_SCALE);
       expect(vp.height).toBeCloseTo(600 * MINIMAP_SCALE);
     });
 
-    it("should handle zero offset", () => {
-      const vp = computeMinimapViewport(0, 0, 800, 600);
-      expect(vp.x).toBeCloseTo(0);
-      expect(vp.y).toBeCloseTo(0);
+    it("should handle zero offset with center at origin", () => {
+      const center = { x: 0, y: 0 };
+      const vp = computeMinimapViewport(0, 0, 800, 600, center);
+      // x: (0 - 0 + 2000) * scale = 2000 * scale = 75
+      expect(vp.x).toBeCloseTo(2000 * MINIMAP_SCALE);
+      expect(vp.y).toBeCloseTo(2000 * MINIMAP_SCALE);
     });
   });
 
   describe("computeMinimapCombatZone", () => {
-    it("should scale combat zone to minimap coordinates", () => {
+    it("should scale combat zone to minimap coordinates relative to center", () => {
       const zone = {
         center: { x: 500, y: 500 },
         radius: 300,
@@ -121,9 +133,11 @@ describe("render-utils", () => {
         turnOrder: [],
         currentTurn: "",
       };
-      const { cx, cy, cr } = computeMinimapCombatZone(zone);
-      expect(cx).toBeCloseTo(500 * MINIMAP_SCALE);
-      expect(cy).toBeCloseTo(500 * MINIMAP_SCALE);
+      const center = { x: 500, y: 500 };
+      const { cx, cy, cr } = computeMinimapCombatZone(zone, center);
+      // 500 - 500 + 2000 = 2000, 2000 * scale = 75
+      expect(cx).toBeCloseTo(2000 * MINIMAP_SCALE);
+      expect(cy).toBeCloseTo(2000 * MINIMAP_SCALE);
       expect(cr).toBeCloseTo(300 * MINIMAP_SCALE);
     });
   });

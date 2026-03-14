@@ -68,7 +68,7 @@ packages/
 
 - **Serialization**: `GameState.players` is a `Map<string, Player>` — use `serializeGameState`/`deserializeGameState` helpers for network transfer (Map doesn't JSON.stringify natively).
 
-- **Rendering**: Pixi.js v8 (async `Application.init()`). All visuals are placeholder shapes (rectangles for cars, grid for ground). Minimap in top-right corner shows zoomed-out view of full map with player dots and viewport indicator. Info panel in bottom-left shows local player stats. Game log panel on right side (max 50vh height) shows events in real-time. Drive gauges in bottom-right. Zoom controls below ui-overlay (top-left). Version SHA displayed as tiny dim text in bottom-right corner.
+- **Rendering**: Pixi.js v8 (async `Application.init()`). All visuals are placeholder shapes (rectangles for cars, grid for ground). Grid uses viewport culling — only visible tiles are drawn each frame. Minimap in top-right corner shows a 2000px-radius viewport centered on the player (not the full world). Info panel in bottom-left shows local player stats. Game log panel on right side (max 50vh height) shows events in real-time. Drive gauges in bottom-right. Zoom controls below ui-overlay (top-left). Version SHA displayed as tiny dim text in bottom-right corner.
 
 - **Version display**: `__APP_VERSION__` injected at build time via Vite `define`. Reads `VITE_APP_VERSION` env var (set in Docker/CI), falls back to `git rev-parse --short HEAD`, then `"dev"`. Displayed in `#version-display` element.
 
@@ -192,21 +192,32 @@ packages/
 
 ## Map System
 
-- **Tile-based**: 40x40 grid of 100px tiles, 4000x4000 world
+- **World grid**: 200×200 tiles (20,000×20,000px). Three 40×40 towns stamped onto a flat grass grid, connected by L-shaped 2-tile-wide roads.
+
+- **Towns** (triangle arrangement):
+  - **Dusthaven** — tile origin (80, 10), world center ~(10000, 3000). Starting town.
+  - **Ironworks** — tile origin (20, 120), world center ~(4000, 14000). Bottom-left.
+  - **Oasis** — tile origin (140, 120), world center ~(16000, 14000). Bottom-right.
+
+- **Town template**: Each town uses the same 40×40 layout — main road loop (tiles 12-27), cross streets, 4 entry roads, buildings in 4 quadrants. Stamped at different world offsets via `stampTown()`.
 
 - **Tile types**: `TileType.Grass` (0), `TileType.Road` (1), `TileType.Building` (2)
 
-- **Town layout**: Main 2-tile-wide road loop (tiles 12-27), cross streets bisecting N-S and E-W, entry roads from all 4 map edges
+- **Buildings**: Visual-only rectangles with distinct colors. `BuildingDef` has position (world tile coords), size, color, optional name.
 
-- **Buildings**: Visual-only rectangles with distinct colors, placed in 4 quadrants inside the loop. `BuildingDef` has position, size, color, optional name
+- **Map data**: `WORLD_MAP: WorldMapData` is the primary export from `shared/townMap.ts` — contains 200×200 tile grid, town defs, all buildings. `TOWN_MAP` kept for backward compatibility.
 
-- **Map data**: `TOWN_MAP` exported from `shared/townMap.ts` — contains tile grid, building defs, NPC waypoints
+- **`TownDef`**: `{ name, tileOrigin, buildings, npcWaypoints, spawnPoint }` — all in world coordinates.
 
 - **`getBuildingColor(row, col)`**: Precomputed lookup for per-tile building colors during rendering
 
-- **Rendering**: `drawGrid()` in renderer paints each tile by type/color, draws building outlines, then subtle grid lines
+- **Rendering**: `drawGrid()` uses viewport culling — calculates visible tile range from camera position/zoom and only draws those tiles each frame. At 100% zoom, ~8×6 tiles visible.
 
-- **Player spawn**: South entry road area (~2000, 3400-3600)
+- **Minimap**: Shows a fixed 2000px-radius viewport centered on the player (not the full world). Background redraws only when player's tile position changes. All minimap coordinate functions take a `centerPos` parameter.
+
+- **Visibility**: Server filters player data per-client — only sends players within `VISIBILITY_RADIUS` (2200px). Combat participants are always included regardless of distance. 200px buffer between data radius and minimap radius prevents pop-in.
+
+- **Player spawn**: Dusthaven's south entry road area (~9950, 4400)
 
 - **Zoom**: Scroll wheel or +/-/Reset buttons (25%-300%, default 100%). Camera, minimap viewport, and screen-to-world all zoom-aware
 
@@ -218,7 +229,7 @@ packages/
 
 - `addNPC()` creates an NPC at the first waypoint with initial velocity
 
-- **Exploration**: `tickNPCInput()` runs each server tick. `computeNPCDriveState()` steers toward the next waypoint (discrete 5° steps). Advances to next waypoint when within 80px threshold. Waypoints defined in `TOWN_MAP.npcWaypoints` (8 points, clockwise around the main loop)
+- **Exploration**: `tickNPCInput()` runs each server tick. `computeNPCDriveState()` steers toward the next waypoint (discrete 5° steps). Advances to next waypoint when within 80px threshold. Waypoints defined in `WORLD_MAP.towns[0].npcWaypoints` (8 points, clockwise around Dusthaven's main loop)
 
 - **Combat AI**: When it's the NPC's turn, `processNPCTurn()` fires back 25% of the time (prefers laser, falls back to projectile), otherwise waits. 1-second delay before acting for natural feel
 

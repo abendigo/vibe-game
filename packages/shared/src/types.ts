@@ -17,9 +17,11 @@ export const PHYSICS = {
   MIN_SPEED_FOR_TURN: 0.3,     // minimum speed to allow steering
   STEERING_STEP: 5,            // degrees per discrete steering tap
   MAX_STEERING_ANGLE: 45,      // degrees, max absolute steering angle
-  MAP_SIZE: 4000,              // world is 0..MAP_SIZE on both axes
+  MAP_SIZE: 20000,             // world is 0..MAP_SIZE on both axes (200×200 tiles)
   TILE_SIZE: 100,              // pixels per tile
-  MAP_TILES: 40,               // MAP_SIZE / TILE_SIZE
+  MAP_TILES: 200,              // MAP_SIZE / TILE_SIZE
+  VISIBILITY_RADIUS: 2200,     // server sends player data within this radius
+  MINIMAP_RADIUS: 2000,        // minimap shows this radius around the player
 } as const;
 
 export enum TileType {
@@ -41,6 +43,20 @@ export interface TownMapData {
   tiles: TileType[][];
   buildings: BuildingDef[];
   npcWaypoints: Vec2[];  // world coordinates
+}
+
+export interface TownDef {
+  name: string;
+  tileOrigin: Vec2;       // top-left corner in tile coordinates
+  buildings: BuildingDef[]; // world tile coordinates
+  npcWaypoints: Vec2[];   // world pixel coordinates
+  spawnPoint: Vec2;       // world pixel coordinates
+}
+
+export interface WorldMapData {
+  tiles: TileType[][];
+  towns: TownDef[];
+  buildings: BuildingDef[]; // all buildings from all towns
 }
 
 export enum CarPartType {

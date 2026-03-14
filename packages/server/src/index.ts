@@ -6,7 +6,10 @@ import { WebSocketServer, WebSocket } from "ws";
 import {
   type ClientMessage,
   type ServerMessage,
+  type Player,
   serializeGameState,
+  PHYSICS,
+  WORLD_MAP,
 } from "@game/shared";
 import { GameStateManager } from "./gameState.js";
 import { load, save, restorePlayer, startAutoSave } from "./persistence.js";
@@ -52,10 +55,48 @@ function broadcast(msg: ServerMessage): void {
 }
 
 function broadcastGameState(): void {
-  broadcast({
-    type: "gameState",
-    state: serializeGameState(gameState.state),
-  });
+  const state = gameState.state;
+  const combatantIds = state.combatZone?.combatantIds ?? [];
+
+  for (const [ws, playerId] of clients) {
+    if (ws.readyState !== WebSocket.OPEN) continue;
+
+    const viewer = state.players.get(playerId);
+    if (!viewer) continue;
+
+    const viewerInCombat = combatantIds.includes(playerId);
+
+    // Filter players by visibility radius
+    const filteredPlayers = new Map<string, Player>();
+    for (const [id, player] of state.players) {
+      // Always include self
+      if (id === playerId) {
+        filteredPlayers.set(id, player);
+        continue;
+      }
+      // Always include all combatants if viewer is in combat
+      if (viewerInCombat && combatantIds.includes(id)) {
+        filteredPlayers.set(id, player);
+        continue;
+      }
+      // Range check
+      const dx = player.position.x - viewer.position.x;
+      const dy = player.position.y - viewer.position.y;
+      if (dx * dx + dy * dy <= PHYSICS.VISIBILITY_RADIUS * PHYSICS.VISIBILITY_RADIUS) {
+        filteredPlayers.set(id, player);
+      }
+    }
+
+    const filteredState = {
+      ...state,
+      players: filteredPlayers,
+    };
+
+    ws.send(JSON.stringify({
+      type: "gameState",
+      state: serializeGameState(filteredState),
+    }));
+  }
 }
 
 // ── HTTP server (static files + health check) ──
@@ -382,7 +423,8 @@ async function handleMessage(ws: WebSocket, msg: ClientMessage): Promise<void> {
 
       const player = gameState.state.players.get(playerId);
       if (player) {
-        player.position = { x: 2000, y: 3500 };
+        const spawn = WORLD_MAP.towns[0].spawnPoint;
+        player.position = { x: spawn.x, y: spawn.y };
         player.velocity = { speed: 0, heading: player.velocity.heading };
         gameState.setDriveState(playerId, { targetSpeed: 0, steeringAngle: 0 });
       }

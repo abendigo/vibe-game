@@ -13,7 +13,7 @@ import {
   WeaponKind,
   PHYSICS,
   simulatePhysics,
-  TOWN_MAP,
+  WORLD_MAP,
 } from "@game/shared";
 
 const COMBAT_RADIUS = 300;
@@ -96,12 +96,13 @@ export class GameStateManager {
   }
 
   addPlayer(id: string, name: string): Player {
+    const spawn = WORLD_MAP.towns[0].spawnPoint;
     const player: Player = {
       id,
       name,
       position: {
-        x: 1950 + Math.random() * 100,
-        y: 3400 + Math.random() * 200,
+        x: spawn.x - 50 + Math.random() * 100,
+        y: spawn.y - 100 + Math.random() * 200,
       },
       rotation: 0,
       velocity: { speed: 0, heading: 0 },
@@ -114,10 +115,11 @@ export class GameStateManager {
   }
 
   addNPC(id: string, name: string): Player {
+    const waypoints = WORLD_MAP.towns[0].npcWaypoints;
     const player: Player = {
       id,
       name,
-      position: { ...TOWN_MAP.npcWaypoints[0] },
+      position: { ...waypoints[0] },
       rotation: 0,
       velocity: { speed: 3, heading: 0 },  // will orient toward waypoint 1 on first tick
       steeringAngle: 0,
@@ -133,7 +135,7 @@ export class GameStateManager {
 
   /** NPC steers toward next waypoint on the road loop. */
   private computeNPCDriveState(player: Player): DriveState {
-    const waypoints = TOWN_MAP.npcWaypoints;
+    const waypoints = WORLD_MAP.towns[0].npcWaypoints;
     let wpIndex = this.npcWaypointIndex.get(player.id) ?? 0;
     const target = waypoints[wpIndex];
 

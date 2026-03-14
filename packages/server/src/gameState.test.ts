@@ -22,10 +22,11 @@ describe("GameStateManager", () => {
 
     it("should assign a position within expected bounds", () => {
       const player = gm.addPlayer("p1", "Alice");
-      expect(player.position.x).toBeGreaterThanOrEqual(1950);
-      expect(player.position.x).toBeLessThanOrEqual(2050);
-      expect(player.position.y).toBeGreaterThanOrEqual(3400);
-      expect(player.position.y).toBeLessThanOrEqual(3600);
+      // Dusthaven spawn point: (9950, 4400) ± randomization
+      expect(player.position.x).toBeGreaterThanOrEqual(9900);
+      expect(player.position.x).toBeLessThanOrEqual(10000);
+      expect(player.position.y).toBeGreaterThanOrEqual(4300);
+      expect(player.position.y).toBeLessThanOrEqual(4500);
     });
 
     it("should create a car with default parts", () => {
