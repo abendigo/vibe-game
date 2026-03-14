@@ -95,6 +95,13 @@ export function restorePlayer(
 
   // Migrate old cars: ensure both weapon types exist
   migrateWeapons(player);
+
+  // Clear weapon cooldowns (cooldowns are combat-only, don't persist across sessions)
+  for (const part of player.car.parts) {
+    if (part.type === CarPartType.Weapon && (part.stats.cooldown ?? 0) > 0) {
+      part.stats.cooldown = 0;
+    }
+  }
 }
 
 function migrateWeapons(player: Player): void {
