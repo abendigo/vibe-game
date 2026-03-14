@@ -505,17 +505,7 @@ export class Renderer {
     combatZone?: CombatZone,
     currentTurn?: string
   ): void {
-    // Draw combat zone circle
     this.combatZoneGraphics.clear();
-    if (combatZone) {
-      const { center, radius } = combatZone;
-      // Filled area
-      this.combatZoneGraphics.circle(center.x, center.y, radius);
-      this.combatZoneGraphics.fill({ color: 0xff4444, alpha: 0.08 });
-      // Border ring
-      this.combatZoneGraphics.circle(center.x, center.y, radius);
-      this.combatZoneGraphics.stroke({ width: 2, color: 0xff4444, alpha: 0.6 });
-    }
 
     // Remove graphics for players that left
     for (const [id, container] of this.playerGraphics) {
@@ -752,18 +742,6 @@ export class Renderer {
       this.drawMinimapBackground(centerPos);
     }
 
-    // Combat zone circle
-    if (combatZone) {
-      const { cx, cy, cr } = computeMinimapCombatZone(combatZone, centerPos);
-      // Only draw if within minimap bounds
-      if (cx + cr >= 0 && cx - cr <= MINIMAP_SIZE && cy + cr >= 0 && cy - cr <= MINIMAP_SIZE) {
-        g.circle(cx, cy, cr);
-        g.fill({ color: 0xff4444, alpha: 0.15 });
-        g.circle(cx, cy, cr);
-        g.stroke({ width: 1, color: 0xff4444, alpha: 0.8 });
-      }
-    }
-
     // Viewport rectangle
     if (this.localPlayerId) {
       const vp = computeMinimapViewport(
@@ -822,7 +800,7 @@ export class Renderer {
       const effectiveTarget = players.get(effectiveTargetId);
       if (!effectiveTarget) continue;
 
-      // Dashed targeting line
+      // Check if target is within weapon range
       const fromX = player.position.x;
       const fromY = player.position.y;
       const toX = effectiveTarget.position.x;
@@ -832,6 +810,15 @@ export class Renderer {
       const dy = toY - fromY;
       const dist = Math.sqrt(dx * dx + dy * dy);
       if (dist < 1) continue;
+
+      // Get max weapon range for this player
+      const maxRange = Math.max(
+        ...player.car.parts
+          .filter((p) => p.stats.weaponKind)
+          .map((p) => p.stats.range ?? 0),
+        0
+      );
+      if (dist > maxRange) continue;
 
       // Draw dashed line
       const dashLen = 8;
