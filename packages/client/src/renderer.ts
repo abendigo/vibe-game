@@ -55,6 +55,9 @@ export class Renderer {
   private ghostPreviewGraphics: Graphics;
   private targetingGraphics: Graphics;
 
+  /** Targeting info for the info panel, updated by updateTargetingLines. */
+  _targetingInfo: { targetName: string; dist: number } | null = null;
+
   private static readonly DEFAULT_ZOOM = 1;
   private static readonly MIN_ZOOM = 0.25;
   private static readonly MAX_ZOOM = 3;
@@ -672,7 +675,7 @@ export class Renderer {
     }
 
     // Update info panel
-    this.updateInfoPanel(players, combatZone);
+    this.updateInfoPanel(players, combatZone, this._targetingInfo);
 
     // Update minimap
     this.updateMinimap(players, combatZone);
@@ -680,7 +683,8 @@ export class Renderer {
 
   private updateInfoPanel(
     players: Map<string, Player>,
-    combatZone?: CombatZone
+    combatZone?: CombatZone,
+    targetingInfo?: { targetName: string; dist: number } | null
   ): void {
     const panel = document.getElementById("info-panel");
     if (!panel) return;
@@ -704,6 +708,18 @@ export class Renderer {
           ? "hp-orange"
           : "hp-red";
 
+    const targetDist = targetingInfo ? Math.round(targetingInfo.dist) : null;
+    const targetName = targetingInfo?.targetName ?? null;
+
+    // Weapon targeting status helper
+    const weaponStatus = (range: number): string => {
+      if (!targetName) return `<span class="label">no target</span>`;
+      if (targetDist !== null && targetDist <= range) {
+        return `<span style="color:#66bb6a">targeting ${targetName} (${targetDist}/${range})</span>`;
+      }
+      return `<span style="color:#ef5350">${targetName} out of range (${targetDist}/${range})</span>`;
+    };
+
     panel.innerHTML =
       `<span class="label">Name:</span> <span class="value">${s.name}</span><br>` +
       `<span class="label">HP:</span> <span class="${hpClass}">${s.hp}/${s.maxHp}</span><br>` +
@@ -712,7 +728,9 @@ export class Renderer {
       `<span class="label">Speed:</span> <span class="value">${Math.round(s.currentSpeed)} / ${s.maxSpeed}</span><br>` +
       `<span class="label">Armor:</span> <span class="value">${s.armor}</span><br>` +
       `<span class="label">Laser:</span> <span class="value">${s.laserDamage} dmg (${s.laserEnergy}/${s.maxLaserEnergy} energy)</span><br>` +
+      `  ${weaponStatus(s.laserRange)}<br>` +
       `<span class="label">Gun:</span> <span class="value">${s.projectileDamage} dmg (${s.projectileAmmo}/${s.maxProjectileAmmo} ammo)</span><br>` +
+      `  ${weaponStatus(s.projectileRange)}<br>` +
       `<span class="label">Parts:</span> <span class="value">${s.partCount}</span><br>` +
       `<span class="label">Skills:</span> <span class="value">DRV ${s.skills.driving} / GUN ${s.skills.gunnery} / LCK ${s.skills.luck}</span><br>` +
       (s.inCombat
@@ -784,22 +802,41 @@ export class Renderer {
     selectedTargetId: string | null
   ): void {
     this.targetingGraphics.clear();
+    this._targetingInfo = null;
+
+    // Find the local player's effective target (for info panel, even if out of range)
+    if (this.localPlayerId) {
+      const localPlayer = players.get(this.localPlayerId);
+      if (localPlayer) {
+        const effTargetId = selectedTargetId
+          ?? computedTargets.get(this.localPlayerId);
+        if (effTargetId) {
+          const effTarget = players.get(effTargetId);
+          if (effTarget) {
+            const tdx = effTarget.position.x - localPlayer.position.x;
+            const tdy = effTarget.position.y - localPlayer.position.y;
+            this._targetingInfo = {
+              targetName: effTarget.name,
+              dist: Math.sqrt(tdx * tdx + tdy * tdy),
+            };
+          }
+        }
+      }
+    }
 
     for (const [id, targetId] of computedTargets) {
       const player = players.get(id);
       const target = players.get(targetId);
       if (!player || !target) continue;
 
-      const isLocal = id === this.localPlayerId;
-
       // Only draw targeting lines for the local player
-      if (!isLocal) continue;
+      if (id !== this.localPlayerId) continue;
 
       // Only show if auto-target is enabled or a target is manually selected
       if (!autoTargetEnabled && !selectedTargetId) continue;
 
       // For local player with manual selection, use that target instead
-      const effectiveTargetId = isLocal && selectedTargetId ? selectedTargetId : targetId;
+      const effectiveTargetId = selectedTargetId ?? targetId;
       const effectiveTarget = players.get(effectiveTargetId);
       if (!effectiveTarget) continue;
 
