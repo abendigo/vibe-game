@@ -18,6 +18,20 @@ import {
 } from "@game/shared";
 
 const NPC_FIRE_CHANCE = 0.25;
+const CAR_WIDTH = 30;
+const CAR_HEIGHT = 20;
+
+/** Compute world-space weapon mount position for a player. */
+function weaponMountWorld(player: Player, kind: WeaponKind): Vec2 {
+  const cos = Math.cos(player.velocity.heading);
+  const sin = Math.sin(player.velocity.heading);
+  const lx = CAR_WIDTH / 2 - 2;
+  const ly = kind === WeaponKind.Laser ? -CAR_HEIGHT / 2 : CAR_HEIGHT / 2;
+  return {
+    x: player.position.x + lx * cos - ly * sin,
+    y: player.position.y + lx * sin + ly * cos,
+  };
+}
 const NPC_WAYPOINT_THRESHOLD = 80; // px — distance to advance to next waypoint
 const NPC_DEPOT_PAUSE_MS = 60_000; // 1 minute pause at depot stops
 const ESCAPE_DISTANCE = 1000;
@@ -698,6 +712,7 @@ export class GameStateManager {
 
     const range = weapon.stats.range ?? 100;
     const kindLabel = kind === WeaponKind.Laser ? "laser" : "projectile";
+    const mount = weaponMountWorld(player, kind);
 
     // Validate target exists and is in range BEFORE consuming ammo
     if (targetId) {
@@ -705,8 +720,8 @@ export class GameStateManager {
       if (!target) {
         return { success: false, message: "Target not found" };
       }
-      const dx = target.position.x - player.position.x;
-      const dy = target.position.y - player.position.y;
+      const dx = target.position.x - mount.x;
+      const dy = target.position.y - mount.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
       if (dist > range) {
         return { success: false, message: `Target out of range (${Math.round(dist)}/${range})` };
@@ -725,14 +740,14 @@ export class GameStateManager {
 
     // No target — fire into the void
     if (!targetId) {
-      const toX = player.position.x + Math.cos(player.velocity.heading) * range;
-      const toY = player.position.y + Math.sin(player.velocity.heading) * range;
+      const toX = mount.x + Math.cos(player.velocity.heading) * range;
+      const toY = mount.y + Math.sin(player.velocity.heading) * range;
       return {
         success: true,
         message: `${player.name} fired ${kindLabel} into the void`,
         animation: {
           kind: kindLabel,
-          from: { ...player.position },
+          from: mount,
           to: { x: toX, y: toY },
           hit: false,
         },
@@ -741,8 +756,6 @@ export class GameStateManager {
 
     // Target already validated above
     const target = this.state.players.get(targetId)!;
-    const dx = target.position.x - player.position.x;
-    const dy = target.position.y - player.position.y;
 
     // Hit chance: base 70% + gunnery*5%, clamped 30-95%
     const hitChance = Math.max(30, Math.min(95, 70 + player.skills.gunnery * 5));
@@ -757,7 +770,7 @@ export class GameStateManager {
         chance: hitChance,
         animation: {
           kind: kindLabel,
-          from: { ...player.position },
+          from: mount,
           to: {
             x: target.position.x + (Math.random() - 0.5) * 60,
             y: target.position.y + (Math.random() - 0.5) * 60,
@@ -782,7 +795,7 @@ export class GameStateManager {
       chance: hitChance,
       animation: {
         kind: kindLabel,
-        from: { ...player.position },
+        from: mount,
         to: { ...target.position },
         hit: true,
       },
