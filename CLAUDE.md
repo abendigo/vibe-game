@@ -233,13 +233,15 @@ packages/
 
 - **Town NPCs**: One NPC per town — "Dusty" (Dusthaven), "Ironclad" (Ironworks), "Mirage" (Oasis). Each patrols their town's road loop using that town's `npcWaypoints`.
 
-- **Circuit NPC**: "Courier" — visits all 3 towns in a loop via `WORLD_MAP.circuitWaypoints` (town centers + L-bend waypoints on connecting roads). ID: `"npc-courier"`.
+- **Circuit NPC**: "Courier" — visits all 3 towns and the truckstop in a loop via `WORLD_MAP.circuitWaypoints` (12-point route tracing actual road tiles). Stops at depot buildings for 60 seconds at each town center and the truckstop. Depot stop indices exported as `CIRCUIT_DEPOT_STOPS`. ID: `"npc-courier"`.
 
 - `Player.isNPC?: boolean` flag distinguishes NPCs from human players
 
 - `addNPC(id, name, waypoints)` creates an NPC at the first waypoint with initial velocity. Each NPC stores its own waypoint list in `npcWaypoints` map.
 
-- **Exploration**: `tickNPCInput()` runs each server tick. `computeNPCDriveState()` steers toward the next waypoint using the NPC's assigned route (discrete 5° steps). Advances to next waypoint when within 80px threshold.
+- **Depot buildings**: Teal (0x2a9d8f) "Depot" building in each town template (local tile 17,18) and at the truckstop (world tile 108,138). Courier pauses at depots via `npcPausedUntil` timestamp map.
+
+- **Exploration**: `tickNPCInput()` runs each server tick. `computeNPCDriveState()` steers toward the next waypoint using the NPC's assigned route (discrete 5° steps). Advances to next waypoint when within 80px threshold. Depot stops trigger a 60-second pause (`NPC_DEPOT_PAUSE_MS`) before advancing.
 
 - **Combat AI**: When it's the NPC's turn, `processNPCTurn()` fires back 25% of the time (prefers laser, falls back to projectile), otherwise waits. 1-second delay before acting for natural feel
 

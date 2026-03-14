@@ -23,6 +23,8 @@ const templateBuildings: BuildingDef[] = [
   { x: 22, y: 22, width: 3, height: 3, color: 0x2f4f4f, name: "Town Hall" },
   { x: 21, y: 21, width: 1, height: 1, color: 0xdaa520, name: "Well" },
   { x: 21, y: 25, width: 2, height: 1, color: 0x704214, name: "Saloon" },
+  // Depot — adjacent to cross-street intersection (just north of horizontal road)
+  { x: 17, y: 18, width: 2, height: 1, color: 0x2a9d8f, name: "Depot" },
 ];
 
 // NPC waypoints in local tile coordinates (clockwise around main loop, on road center)
@@ -243,6 +245,8 @@ function buildWorldGrid(): TileType[][] {
   paintRect(tiles, 98, 132, 8, 3, TileType.Building);
   // Garage bay: cols 100-103, rows 135-136 (distinct color, interaction zone)
   paintRect(tiles, 100, 135, 4, 2, TileType.Building);
+  // Depot: cols 108-109, rows 138-139 (east of parking lot, adjacent to road)
+  paintRect(tiles, 108, 138, 2, 2, TileType.Building);
 
   return tiles;
 }
@@ -254,6 +258,7 @@ const worldTiles = buildWorldGrid();
 const truckstopBuildings: BuildingDef[] = [
   { x: 98, y: 132, width: 8, height: 3, color: 0xb05030, name: "Truckstop" },
   { x: 100, y: 135, width: 4, height: 2, color: 0xe8c840, name: "Garage" },
+  { x: 108, y: 138, width: 2, height: 2, color: 0x2a9d8f, name: "Depot" },
 ];
 
 // ── Precomputed building color lookup by tile coordinate ──
@@ -300,29 +305,33 @@ const ironworksCenter: Vec2 = { x: (ironworksOrigin.x + 20) * S, y: (ironworksOr
 const oasisCenter: Vec2     = { x: (oasisOrigin.x + 20) * S, y: (oasisOrigin.y + 20) * S };
 
 const circuitWaypoints: Vec2[] = [
-  // ── Dusthaven ──
-  dusthavenCenter,                                        // cross-street center
+  // ── Dusthaven (depot stop) ──
+  dusthavenCenter,                                        // [0] cross-street center — DEPOT
 
   // ── Dusthaven → Ironworks (south exit, horizontal west, vertical south) ──
-  { x: dusthavenCenter.x, y: (dusthavenOrigin.y + TOWN_TILES) * S },  // south exit of town
-  roadCenter(ironworksOrigin.x + 19, dusthavenOrigin.y + TOWN_TILES),  // L-bend (west end of horizontal / top of vertical)
-  { x: (ironworksOrigin.x + 20) * S, y: ironworksOrigin.y * S },       // Ironworks north entry
+  { x: dusthavenCenter.x, y: (dusthavenOrigin.y + TOWN_TILES) * S },  // [1] south exit of town
+  roadCenter(ironworksOrigin.x + 19, dusthavenOrigin.y + TOWN_TILES),  // [2] L-bend
+  { x: (ironworksOrigin.x + 20) * S, y: ironworksOrigin.y * S },       // [3] Ironworks north entry
 
-  // ── Ironworks ──
-  ironworksCenter,                                        // cross-street center
+  // ── Ironworks (depot stop) ──
+  ironworksCenter,                                        // [4] cross-street center — DEPOT
 
-  // ── Ironworks → Oasis (east exit, straight horizontal east) ──
-  { x: (ironworksOrigin.x + TOWN_TILES) * S, y: ironworksCenter.y },   // east exit of town
-  { x: oasisOrigin.x * S, y: oasisCenter.y },                           // Oasis west entry
+  // ── Ironworks → Oasis (east exit, past truckstop depot, to Oasis) ──
+  { x: (ironworksOrigin.x + TOWN_TILES) * S, y: ironworksCenter.y },   // [5] east exit of town
+  { x: 109 * S, y: ironworksCenter.y },                                 // [6] truckstop depot — DEPOT
+  { x: oasisOrigin.x * S, y: oasisCenter.y },                           // [7] Oasis west entry
 
-  // ── Oasis ──
-  oasisCenter,                                            // cross-street center
+  // ── Oasis (depot stop) ──
+  oasisCenter,                                            // [8] cross-street center — DEPOT
 
   // ── Oasis → Dusthaven (north exit, vertical north, horizontal east to Dusthaven south) ──
-  { x: oasisCenter.x, y: oasisOrigin.y * S },                           // north exit of town
-  roadCenter(oasisOrigin.x + 19, dusthavenOrigin.y + TOWN_TILES),       // L-bend (top of vertical / east end of horizontal)
-  { x: dusthavenCenter.x, y: (dusthavenOrigin.y + TOWN_TILES) * S },    // Dusthaven south entry
+  { x: oasisCenter.x, y: oasisOrigin.y * S },                           // [9] north exit of town
+  roadCenter(oasisOrigin.x + 19, dusthavenOrigin.y + TOWN_TILES),       // [10] L-bend
+  { x: dusthavenCenter.x, y: (dusthavenOrigin.y + TOWN_TILES) * S },    // [11] Dusthaven south entry
 ];
+
+/** Indices into circuitWaypoints where the courier stops for 60s (depot locations). */
+export const CIRCUIT_DEPOT_STOPS: number[] = [0, 4, 6, 8];
 
 // ── Exports ──
 

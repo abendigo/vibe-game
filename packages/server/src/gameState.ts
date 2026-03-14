@@ -14,11 +14,13 @@ import {
   PHYSICS,
   simulatePhysics,
   WORLD_MAP,
+  CIRCUIT_DEPOT_STOPS,
 } from "@game/shared";
 
 const COMBAT_RADIUS = 300;
 const NPC_FIRE_CHANCE = 0.25;
 const NPC_WAYPOINT_THRESHOLD = 80; // px — distance to advance to next waypoint
+const NPC_DEPOT_PAUSE_MS = 60_000; // 1 minute pause at depot stops
 const ESCAPE_DISTANCE = 1000;
 const COMBAT_TICKS_PER_TURN = 30;
 
@@ -88,6 +90,7 @@ export class GameStateManager {
   playerDriveStates: Map<string, DriveState> = new Map();
   private npcWaypointIndex: Map<string, number> = new Map();
   private npcWaypoints: Map<string, Vec2[]> = new Map();
+  private npcPausedUntil: Map<string, number> = new Map();
 
   constructor() {
     this.state = {
@@ -134,8 +137,20 @@ export class GameStateManager {
     return player;
   }
 
+  /** Check if a waypoint index is a depot stop for this NPC. */
+  private isDepotStop(npcId: string, wpIndex: number): boolean {
+    // Only the courier has depot stops (uses circuitWaypoints)
+    if (npcId !== "npc-courier") return false;
+    return CIRCUIT_DEPOT_STOPS.includes(wpIndex);
+  }
+
   /** NPC steers toward next waypoint on its assigned route. */
   private computeNPCDriveState(player: Player): DriveState {
+    // If paused at a depot, stay stopped
+    if (this.npcPausedUntil.has(player.id)) {
+      return { targetSpeed: 0, steeringAngle: 0 };
+    }
+
     const waypoints = this.npcWaypoints.get(player.id) ?? WORLD_MAP.towns[0].npcWaypoints;
     let wpIndex = this.npcWaypointIndex.get(player.id) ?? 0;
     const target = waypoints[wpIndex];
@@ -144,8 +159,14 @@ export class GameStateManager {
     const dy = target.y - player.position.y;
     const dist = Math.sqrt(dx * dx + dy * dy);
 
-    // Advance to next waypoint if close enough
+    // Reached waypoint
     if (dist < NPC_WAYPOINT_THRESHOLD) {
+      // Depot stop — begin pause instead of advancing
+      if (this.isDepotStop(player.id, wpIndex)) {
+        this.npcPausedUntil.set(player.id, Date.now() + NPC_DEPOT_PAUSE_MS);
+        return { targetSpeed: 0, steeringAngle: 0 };
+      }
+      // Normal waypoint — advance immediately
       wpIndex = (wpIndex + 1) % waypoints.length;
       this.npcWaypointIndex.set(player.id, wpIndex);
       return this.computeNPCDriveState(player);
@@ -163,11 +184,22 @@ export class GameStateManager {
     return { targetSpeed: 3, steeringAngle };
   }
 
-  /** Update NPC drive state to maintain a wide circle around NPC_CIRCLE_CENTER. */
+  /** Update NPC drive states each tick. Handles depot pauses for the courier. */
   tickNPCInput(): void {
     for (const [id, player] of this.state.players) {
       if (!player.isNPC) continue;
       if (this.isInCombat(id)) continue;
+
+      // Check if depot pause has expired
+      const pausedUntil = this.npcPausedUntil.get(id);
+      if (pausedUntil !== undefined && Date.now() >= pausedUntil) {
+        // Pause over — advance past the depot waypoint and resume
+        this.npcPausedUntil.delete(id);
+        const waypoints = this.npcWaypoints.get(id) ?? [];
+        const wpIndex = this.npcWaypointIndex.get(id) ?? 0;
+        this.npcWaypointIndex.set(id, (wpIndex + 1) % waypoints.length);
+      }
+
       const driveState = this.computeNPCDriveState(player);
       this.playerDriveStates.set(id, driveState);
     }
