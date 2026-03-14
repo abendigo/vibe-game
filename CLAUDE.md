@@ -151,13 +151,17 @@ packages/
 
 ## Combat System
 
-- Turn-based, initiated by a player (spacebar). Creates a `CombatZone` with a center (initiator's position) and radius (300px).
+- Turn-based, initiated by firing a weapon. The first shot is a **free action** — combat starts after it resolves, then normal turn order begins.
 
-- Only players within the combat radius become combatants and enter turn-based mode. Players outside continue real-time exploration. If a non-combatant moves into the combat zone, they automatically join the combat (inserted into turn order after the current turn). Server broadcasts `combatJoin` message when this happens.
+- **Combat zone**: created via `startCombatFromShot(shooterId, targetId)`. Zone = union of circles around shooter and target, each with radius = `maxWeaponRange * COMBAT_ZONE_RANGE_MULTIPLIER (3)`. Center = midpoint between shooter/target. Effective radius = halfDist + zoneRadius. Everyone within zoneRadius of either the shooter or target becomes a combatant.
+
+- Shooter is placed first in turn order (free action), remaining combatants shuffled.
+
+- Players outside continue real-time exploration. If a non-combatant moves into the combat zone, they automatically join the combat (inserted into turn order after the current turn). Server broadcasts `combatJoin` message when this happens.
 
 - `CombatZone` in `GameState` holds: `center`, `radius`, `combatantIds`, `turnOrder`, `currentTurn`
 
-- Actions: `move` (to Vec2), `attack` (manual target + weapon), `fireLaser`, `fireProjectile`, `useItem`, `wait`
+- Actions: `move` (to Vec2), `attack` (manual target + weapon), `fireLaser(targetId?)`, `fireProjectile(targetId?)`, `useItem`, `wait`
 
 - Server validates it's the acting player's turn before processing
 
@@ -175,7 +179,17 @@ packages/
 
 - **Projectile**: 4 damage, 150 range, 20 ammo (tracked in `PartStats.ammo`/`maxAmmo`)
 
-- **Auto-targeting**: `fireLaser`/`fireProjectile` actions require no target — server finds all enemy combatants in range and picks one randomly
+- **Weapon bar**: Always visible at bottom-center (`#weapon-bar`). Shows Auto Target toggle, Laser button, Gun button. Buttons disabled when: no ammo/energy, on cooldown, or in combat but not your turn. Works in both exploration and combat.
+
+- **Auto-targeting**: On by default. Client computes nearest valid target for every vehicle each frame (O(n^2), small n). Draws dashed targeting lines from each vehicle to its nearest target. Local player's line is cyan, others are dim red.
+
+- **Manual targeting**: Click an enemy to select it. Overrides auto-nearest. Selection clears when target dies, escapes, or leaves weapon range (falls back to auto-nearest). Clicking also re-enables auto-target if off.
+
+- **Firing with no target**: If auto-target is off and no manual selection, firing consumes ammo/energy and plays the animation in the heading direction, but hits nothing.
+
+- **Client message**: `fireWeapon { weaponKind: "Laser"|"Projectile", targetId?: string }` — works in both explore and combat. Replaces old `startCombat` + `combatAction.fireLaser/fireProjectile`.
+
+- **Server target resolution**: Uses client-specified `targetId`. If targetId is undefined, fires into the void. If target is out of range, shot still consumed but misses toward the target direction.
 
 - **Hit/miss system**: Hit chance = base 70% + gunnery×5%, clamped 30-95%. Roll and chance are returned in `CombatResult` for game log display. Misses still consume ammo/energy but deal no damage; miss animation offsets the target position
 
@@ -183,7 +197,7 @@ packages/
   - Laser: cyan beam line that fades out over 200ms with impact flash
   - Projectile: orange bullet that travels from shooter to target over 400ms with trail and impact
 
-- Combat UI shows "Laser [N]", "Gun [N]", and "End Turn [Space]" buttons; ammo/energy buttons disable at 0
+- End Turn button (`#combat-ui`) only shows during combat when it's your turn. Space = End Turn (combat only).
 
 - Persistence migration: old saves with single "Bumper Cannon" weapon are auto-migrated to dual weapons on restore
 

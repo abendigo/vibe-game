@@ -53,6 +53,7 @@ export class Renderer {
   private animations: ActiveAnimation[] = [];
   private previewGraphics: Graphics;
   private ghostPreviewGraphics: Graphics;
+  private targetingGraphics: Graphics;
 
   private static readonly DEFAULT_ZOOM = 1;
   private static readonly MIN_ZOOM = 0.25;
@@ -79,6 +80,7 @@ export class Renderer {
     this.combatZoneGraphics = new Graphics();
     this.previewGraphics = new Graphics();
     this.ghostPreviewGraphics = new Graphics();
+    this.targetingGraphics = new Graphics();
   }
 
   async init(canvas?: HTMLCanvasElement): Promise<void> {
@@ -104,6 +106,9 @@ export class Renderer {
 
     // Ghost car trajectory preview (exploration + combat)
     this.world.addChild(this.ghostPreviewGraphics);
+
+    // Targeting lines (above ghosts, below UI)
+    this.world.addChild(this.targetingGraphics);
 
     // UI layer (fixed to screen, not world)
     this.turnOrderContainer.position.set(650, 10);
@@ -676,61 +681,11 @@ export class Renderer {
       }
     }
 
-    // Show/hide combat UI and update weapon buttons
-    const combatUi = document.getElementById("combat-ui");
-    if (combatUi) {
-      const isMyTurn = localInCombat && combatZone?.currentTurn === this.localPlayerId;
-      combatUi.style.display = isMyTurn ? "block" : "none";
-
-      if (isMyTurn && this.localPlayerId) {
-        const localPlayer = players.get(this.localPlayerId);
-        if (localPlayer) {
-          this.updateWeaponButtons(localPlayer);
-        }
-      }
-    }
-
     // Update info panel
     this.updateInfoPanel(players, combatZone);
 
     // Update minimap
     this.updateMinimap(players, combatZone);
-  }
-
-  private updateWeaponButtons(player: Player): void {
-    const laserBtn = document.getElementById("btn-fire-laser") as HTMLButtonElement | null;
-    const projBtn = document.getElementById("btn-fire-projectile") as HTMLButtonElement | null;
-
-    const laser = player.car.parts.find(
-      (p) => p.stats.weaponKind === WeaponKind.Laser
-    );
-    const projectile = player.car.parts.find(
-      (p) => p.stats.weaponKind === WeaponKind.Projectile
-    );
-
-    if (laserBtn) {
-      const energy = laser?.stats.energy ?? 0;
-      const laserCd = laser?.stats.cooldown ?? 0;
-      if (laserCd > 0) {
-        laserBtn.textContent = `Laser [CD:${laserCd}]`;
-        laserBtn.disabled = true;
-      } else {
-        laserBtn.textContent = `Laser [${energy}]`;
-        laserBtn.disabled = energy <= 0;
-      }
-    }
-
-    if (projBtn) {
-      const ammo = projectile?.stats.ammo ?? 0;
-      const projCd = projectile?.stats.cooldown ?? 0;
-      if (projCd > 0) {
-        projBtn.textContent = `Gun [CD:${projCd}]`;
-        projBtn.disabled = true;
-      } else {
-        projBtn.textContent = `Gun [${ammo}]`;
-        projBtn.disabled = ammo <= 0;
-      }
-    }
   }
 
   private updateInfoPanel(
@@ -839,6 +794,74 @@ export class Renderer {
       } else {
         g.circle(mx, my, 3);
         g.fill(color);
+      }
+    }
+  }
+
+  /** Draw targeting lines from vehicles to their computed targets. */
+  updateTargetingLines(
+    players: Map<string, Player>,
+    computedTargets: Map<string, string>,
+    autoTargetEnabled: boolean,
+    selectedTargetId: string | null
+  ): void {
+    this.targetingGraphics.clear();
+
+    for (const [id, targetId] of computedTargets) {
+      const player = players.get(id);
+      const target = players.get(targetId);
+      if (!player || !target) continue;
+
+      const isLocal = id === this.localPlayerId;
+
+      // For local player: only show if auto-target is enabled or a target is manually selected
+      if (isLocal && !autoTargetEnabled && !selectedTargetId) continue;
+
+      // For local player with manual selection, use that target instead
+      const effectiveTargetId = isLocal && selectedTargetId ? selectedTargetId : targetId;
+      const effectiveTarget = players.get(effectiveTargetId);
+      if (!effectiveTarget) continue;
+
+      // Dashed targeting line
+      const fromX = player.position.x;
+      const fromY = player.position.y;
+      const toX = effectiveTarget.position.x;
+      const toY = effectiveTarget.position.y;
+
+      const dx = toX - fromX;
+      const dy = toY - fromY;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < 1) continue;
+
+      // Draw dashed line
+      const dashLen = 8;
+      const gapLen = 6;
+      const nx = dx / dist;
+      const ny = dy / dist;
+      let d = 0;
+      const color = isLocal ? 0x4fc3f7 : 0xff8888;
+      const alpha = isLocal ? 0.5 : 0.2;
+
+      while (d < dist) {
+        const segEnd = Math.min(d + dashLen, dist);
+        this.targetingGraphics.moveTo(fromX + nx * d, fromY + ny * d);
+        this.targetingGraphics.lineTo(fromX + nx * segEnd, fromY + ny * segEnd);
+        d = segEnd + gapLen;
+      }
+      this.targetingGraphics.stroke({ width: isLocal ? 1.5 : 1, color, alpha });
+
+      // Small crosshair on target for local player
+      if (isLocal) {
+        const cx = effectiveTarget.position.x;
+        const cy = effectiveTarget.position.y;
+        const s = 8;
+        this.targetingGraphics.moveTo(cx - s, cy);
+        this.targetingGraphics.lineTo(cx + s, cy);
+        this.targetingGraphics.moveTo(cx, cy - s);
+        this.targetingGraphics.lineTo(cx, cy + s);
+        this.targetingGraphics.stroke({ width: 1.5, color: 0x4fc3f7, alpha: 0.7 });
+        this.targetingGraphics.circle(cx, cy, 12);
+        this.targetingGraphics.stroke({ width: 1, color: 0x4fc3f7, alpha: 0.4 });
       }
     }
   }

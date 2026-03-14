@@ -2,6 +2,17 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { GameStateManager } from "./gameState.js";
 import { GamePhase, PHYSICS, WORLD_MAP } from "@game/shared";
 
+/** Helper: start combat via weapon shot (replaces old startCombat). */
+function startCombat(gm: GameStateManager, shooterId: string, targetId?: string): ReturnType<GameStateManager["startCombatFromShot"]> {
+  // If no target specified, find the first other player
+  if (!targetId) {
+    for (const [id] of gm.state.players) {
+      if (id !== shooterId) { targetId = id; break; }
+    }
+  }
+  return gm.startCombatFromShot(shooterId, targetId);
+}
+
 describe("GameStateManager", () => {
   let gm: GameStateManager;
 
@@ -146,7 +157,7 @@ describe("GameStateManager", () => {
       p1.position = { x: 500, y: 500 };
       p2.position = { x: 510, y: 500 };
 
-      gm.startCombat("p1");
+      startCombat(gm, "p1");
       const posBefore = { ...p1.position };
       p1.velocity = { speed: 5, heading: 0 };
       gm.setDriveState("p1", { targetSpeed: 5, steeringAngle: 0 });
@@ -164,7 +175,7 @@ describe("GameStateManager", () => {
       p2.position = { x: 510, y: 500 };
       p3.position = { x: 1500, y: 1500 };
 
-      gm.startCombat("p1");
+      startCombat(gm, "p1");
       p3.velocity = { speed: 0, heading: 0 };
       gm.setDriveState("p3", { targetSpeed: 5, steeringAngle: 0 });
 
@@ -191,19 +202,31 @@ describe("GameStateManager", () => {
 
   // ── Combat zone ──
 
-  describe("startCombat", () => {
-    it("should create a combat zone centered on the initiator", () => {
+  describe("startCombatFromShot", () => {
+    it("should create a combat zone centered between shooter and target", () => {
       const p1 = gm.addPlayer("p1", "Alice");
       const p2 = gm.addPlayer("p2", "Bob");
       p1.position = { x: 500, y: 500 };
       p2.position = { x: 600, y: 500 };
 
-      const zone = gm.startCombat("p1");
+      const zone = gm.startCombatFromShot("p1", "p2");
       expect(zone).not.toBeNull();
-      expect(zone!.center).toEqual({ x: 500, y: 500 });
-      expect(zone!.radius).toBe(300);
+      expect(zone!.center).toEqual({ x: 550, y: 500 });
+      // Radius = halfDist(50) + maxRange(200) * multiplier(3) = 650
+      expect(zone!.radius).toBe(650);
       expect(zone!.combatantIds).toContain("p1");
       expect(zone!.combatantIds).toContain("p2");
+    });
+
+    it("should place shooter first in turn order", () => {
+      const p1 = gm.addPlayer("p1", "Alice");
+      const p2 = gm.addPlayer("p2", "Bob");
+      p1.position = { x: 500, y: 500 };
+      p2.position = { x: 510, y: 500 };
+
+      const zone = gm.startCombatFromShot("p1", "p2")!;
+      expect(zone.turnOrder[0]).toBe("p1");
+      expect(zone.currentTurn).toBe("p1");
     });
 
     it("should set game phase to Combat", () => {
@@ -212,29 +235,29 @@ describe("GameStateManager", () => {
       p1.position = { x: 500, y: 500 };
       p2.position = { x: 510, y: 500 };
 
-      gm.startCombat("p1");
+      startCombat(gm, "p1");
       expect(gm.state.phase).toBe(GamePhase.Combat);
     });
 
-    it("should return null if initiator doesn't exist", () => {
-      expect(gm.startCombat("ghost")).toBeNull();
+    it("should return null if shooter doesn't exist", () => {
+      expect(gm.startCombatFromShot("ghost", "p2")).toBeNull();
     });
 
     it("should return null if fewer than 2 players in range", () => {
       const p1 = gm.addPlayer("p1", "Alice");
       p1.position = { x: 500, y: 500 };
-      expect(gm.startCombat("p1")).toBeNull();
+      expect(gm.startCombatFromShot("p1")).toBeNull();
     });
 
-    it("should exclude players outside the combat radius", () => {
+    it("should exclude players outside the zone radius", () => {
       const p1 = gm.addPlayer("p1", "Alice");
       const p2 = gm.addPlayer("p2", "Bob");
       const p3 = gm.addPlayer("p3", "Charlie");
       p1.position = { x: 500, y: 500 };
       p2.position = { x: 510, y: 500 };
-      p3.position = { x: 1500, y: 1500 }; // far away
+      p3.position = { x: 1500, y: 1500 }; // far away (> 600px zone radius)
 
-      const zone = gm.startCombat("p1");
+      const zone = startCombat(gm, "p1");
       expect(zone!.combatantIds).toContain("p1");
       expect(zone!.combatantIds).toContain("p2");
       expect(zone!.combatantIds).not.toContain("p3");
@@ -246,8 +269,8 @@ describe("GameStateManager", () => {
       p1.position = { x: 500, y: 500 };
       p2.position = { x: 510, y: 500 };
 
-      gm.startCombat("p1");
-      expect(gm.startCombat("p1")).toBeNull();
+      startCombat(gm, "p1");
+      expect(startCombat(gm, "p1")).toBeNull();
     });
 
     it("should assign a turn order containing all combatants", () => {
@@ -256,7 +279,7 @@ describe("GameStateManager", () => {
       p1.position = { x: 500, y: 500 };
       p2.position = { x: 510, y: 500 };
 
-      const zone = gm.startCombat("p1")!;
+      const zone = startCombat(gm, "p1")!;
       expect(zone.turnOrder).toHaveLength(2);
       expect(zone.turnOrder).toContain("p1");
       expect(zone.turnOrder).toContain("p2");
@@ -271,7 +294,7 @@ describe("GameStateManager", () => {
       p1.position = { x: 500, y: 500 };
       p2.position = { x: 510, y: 500 };
 
-      gm.startCombat("p1");
+      startCombat(gm, "p1");
       gm.endCombat();
 
       expect(gm.state.combatZone).toBeUndefined();
@@ -290,7 +313,7 @@ describe("GameStateManager", () => {
       p2.position = { x: 510, y: 500 };
       p3.position = { x: 1500, y: 1500 };
 
-      gm.startCombat("p1");
+      startCombat(gm, "p1");
       expect(gm.isInCombat("p3")).toBe(false);
 
       const result = gm.addToCombat("p3");
@@ -305,7 +328,7 @@ describe("GameStateManager", () => {
       p1.position = { x: 500, y: 500 };
       p2.position = { x: 510, y: 500 };
 
-      gm.startCombat("p1");
+      startCombat(gm, "p1");
       expect(gm.addToCombat("p1")).toBe(false);
     });
 
@@ -322,7 +345,7 @@ describe("GameStateManager", () => {
       p2.position = { x: 510, y: 500 };
       p3.position = { x: 1500, y: 1500 };
 
-      gm.startCombat("p1");
+      startCombat(gm, "p1");
       const zone = gm.state.combatZone!;
       const currentTurn = zone.currentTurn;
       const currentIndex = zone.turnOrder.indexOf(currentTurn);
@@ -339,17 +362,17 @@ describe("GameStateManager", () => {
       const p3 = gm.addPlayer("p3", "Charlie");
       p1.position = { x: 500, y: 500 };
       p2.position = { x: 510, y: 500 };
-      // Place p3 just outside combat radius, moving toward center
-      p3.position = { x: 500 + 305, y: 500 };
+      // Zone radius = maxRange(200) * 3 = 600, center ~ midpoint(505, 500)
+      // Place p3 just outside effective radius, moving toward center
+      const zone = startCombat(gm, "p1")!;
+      const effectiveRadius = zone.radius;
+      p3.position = { x: zone.center.x + effectiveRadius + 5, y: 500 };
       p3.velocity = { speed: 0, heading: Math.PI }; // heading west
       gm.setDriveState("p3", { targetSpeed: 8, steeringAngle: 0 });
-
-      gm.startCombat("p1");
       expect(gm.isInCombat("p3")).toBe(false);
 
-      // Tick physics -- p3 moves 8 units west (to ~797)
+      // Tick physics -- p3 moves 8 units west, entering the zone
       gm.tickPhysics();
-      // p3 is now within 300 of center 500
       expect(gm.isInCombat("p3")).toBe(true);
     });
   });
@@ -362,7 +385,7 @@ describe("GameStateManager", () => {
       const p2 = gm.addPlayer("p2", "Bob");
       p1.position = { x: 500, y: 500 };
       p2.position = { x: 550, y: 500 };
-      gm.startCombat("p1");
+      startCombat(gm, "p1");
       return { p1, p2, zone: gm.state.combatZone! };
     }
 
@@ -548,11 +571,12 @@ describe("GameStateManager", () => {
     });
 
     describe("fireLaser action", () => {
-      it("should auto-target and fire (hit or miss)", () => {
+      it("should fire at specified target (hit or miss)", () => {
         const { p1, p2, zone } = setupCombat();
         const currentId = zone.currentTurn;
+        const targetId = currentId === "p1" ? "p2" : "p1";
 
-        const result = gm.processCombatAction(currentId, { type: "fireLaser" });
+        const result = gm.processCombatAction(currentId, { type: "fireLaser", targetId });
         expect(result.success).toBe(true);
         expect(result.animation).toBeDefined();
         expect(result.animation!.kind).toBe("laser");
@@ -560,16 +584,28 @@ describe("GameStateManager", () => {
         expect(result.chance).toBeDefined();
       });
 
+      it("should fire into the void when no target specified", () => {
+        const { zone } = setupCombat();
+        const currentId = zone.currentTurn;
+
+        const result = gm.processCombatAction(currentId, { type: "fireLaser" });
+        expect(result.success).toBe(true);
+        expect(result.animation).toBeDefined();
+        expect(result.animation!.hit).toBe(false);
+        expect(result.message).toContain("void");
+      });
+
       it("should consume energy", () => {
         const { zone } = setupCombat();
         const currentId = zone.currentTurn;
+        const targetId = zone.turnOrder.find((id) => id !== currentId)!;
         const player = gm.state.players.get(currentId)!;
         const laser = player.car.parts.find(
           (p) => p.stats.weaponKind === "Laser"
         )!;
         const energyBefore = laser.stats.energy!;
 
-        gm.processCombatAction(currentId, { type: "fireLaser" });
+        gm.processCombatAction(currentId, { type: "fireLaser", targetId });
         expect(laser.stats.energy).toBe(energyBefore - 1);
       });
 
@@ -578,9 +614,9 @@ describe("GameStateManager", () => {
         const currentId = zone.currentTurn;
         const attacker = gm.state.players.get(currentId)!;
         const target = currentId === "p1" ? p2 : p1;
+        const targetId = target.id;
         attacker.skills.gunnery = 10; // 70 + 50 = 120, capped at 95%
 
-        // Try multiple times - with 95% chance, very likely to hit at least once
         let hitOnce = false;
         for (let i = 0; i < 20; i++) {
           const hpBefore = target.car.baseHealth;
@@ -588,7 +624,7 @@ describe("GameStateManager", () => {
           laser.stats.energy = 10;
           laser.stats.cooldown = 0;
           zone.currentTurn = currentId;
-          const result = gm.processCombatAction(currentId, { type: "fireLaser" });
+          const result = gm.processCombatAction(currentId, { type: "fireLaser", targetId });
           if (result.animation?.hit) {
             hitOnce = true;
             expect(target.car.baseHealth).toBeLessThan(hpBefore);
@@ -612,27 +648,31 @@ describe("GameStateManager", () => {
         expect(result.message).toBe("Out of energy");
       });
 
-      it("should fail when no targets in range", () => {
+      it("should still consume ammo when target is out of range", () => {
         const { p1, p2, zone } = setupCombat();
         const currentId = zone.currentTurn;
-        const attacker = gm.state.players.get(currentId)!;
         const target = currentId === "p1" ? p2 : p1;
-        // Move target far away
         target.position = { x: 9999, y: 9999 };
 
-        const result = gm.processCombatAction(currentId, { type: "fireLaser" });
-        expect(result.success).toBe(false);
-        expect(result.message).toBe("No targets in range");
+        const player = gm.state.players.get(currentId)!;
+        const laser = player.car.parts.find(p => p.stats.weaponKind === "Laser")!;
+        const energyBefore = laser.stats.energy!;
+
+        const result = gm.processCombatAction(currentId, { type: "fireLaser", targetId: target.id });
+        expect(result.success).toBe(true);
+        expect(result.animation!.hit).toBe(false);
+        expect(laser.stats.energy).toBe(energyBefore - 1);
       });
     });
 
     describe("fireProjectile action", () => {
-      it("should auto-target and fire (hit or miss)", () => {
-        const { p1, p2, zone } = setupCombat();
+      it("should fire at specified target (hit or miss)", () => {
+        const { zone } = setupCombat();
         const currentId = zone.currentTurn;
+        const targetId = zone.turnOrder.find((id) => id !== currentId)!;
 
         const result = gm.processCombatAction(currentId, {
-          type: "fireProjectile",
+          type: "fireProjectile", targetId,
         });
         expect(result.success).toBe(true);
         expect(result.animation).toBeDefined();
@@ -644,13 +684,14 @@ describe("GameStateManager", () => {
       it("should consume ammo", () => {
         const { zone } = setupCombat();
         const currentId = zone.currentTurn;
+        const targetId = zone.turnOrder.find((id) => id !== currentId)!;
         const player = gm.state.players.get(currentId)!;
         const gun = player.car.parts.find(
           (p) => p.stats.weaponKind === "Projectile"
         )!;
         const ammoBefore = gun.stats.ammo!;
 
-        gm.processCombatAction(currentId, { type: "fireProjectile" });
+        gm.processCombatAction(currentId, { type: "fireProjectile", targetId });
         expect(gun.stats.ammo).toBe(ammoBefore - 1);
       });
 
@@ -692,7 +733,7 @@ describe("GameStateManager", () => {
       p1.position = { x: 500, y: 500 };
       p2.position = { x: 510, y: 500 };
 
-      gm.startCombat("p1");
+      startCombat(gm, "p1");
       const zone = gm.state.combatZone!;
       const first = zone.currentTurn;
       const second = zone.turnOrder.find((id) => id !== first)!;
@@ -714,7 +755,7 @@ describe("GameStateManager", () => {
       p1.position = { x: 500, y: 500 };
       p2.position = { x: 510, y: 500 };
 
-      gm.startCombat("p1");
+      startCombat(gm, "p1");
       const next = gm.advanceTurn()!;
       expect(gm.state.currentTurn).toBe(next);
     });
@@ -731,7 +772,7 @@ describe("GameStateManager", () => {
       p2.position = { x: 510, y: 500 };
       p3.position = { x: 520, y: 500 };
 
-      gm.startCombat("p1");
+      startCombat(gm, "p1");
       gm.removePlayer("p3");
 
       const zone = gm.state.combatZone!;
@@ -745,7 +786,7 @@ describe("GameStateManager", () => {
       p1.position = { x: 500, y: 500 };
       p2.position = { x: 510, y: 500 };
 
-      gm.startCombat("p1");
+      startCombat(gm, "p1");
       gm.removePlayer("p2");
 
       expect(gm.state.combatZone).toBeUndefined();
@@ -760,7 +801,7 @@ describe("GameStateManager", () => {
       p2.position = { x: 510, y: 500 };
       p3.position = { x: 520, y: 500 };
 
-      gm.startCombat("p1");
+      startCombat(gm, "p1");
       const zone = gm.state.combatZone!;
       const currentId = zone.currentTurn;
 
@@ -780,7 +821,7 @@ describe("GameStateManager", () => {
       p2.position = { x: 510, y: 500 };
       p3.position = { x: 1500, y: 1500 };
 
-      gm.startCombat("p1");
+      startCombat(gm, "p1");
       const zoneBefore = { ...gm.state.combatZone! };
       gm.removePlayer("p3");
 
@@ -803,7 +844,7 @@ describe("GameStateManager", () => {
       p1.position = { x: 500, y: 500 };
       p2.position = { x: 510, y: 500 };
 
-      gm.startCombat("p1");
+      startCombat(gm, "p1");
       expect(gm.isInCombat("p1")).toBe(true);
       expect(gm.isInCombat("p2")).toBe(true);
     });
@@ -816,7 +857,7 @@ describe("GameStateManager", () => {
       p2.position = { x: 510, y: 500 };
       p3.position = { x: 1500, y: 1500 };
 
-      gm.startCombat("p1");
+      startCombat(gm, "p1");
       expect(gm.isInCombat("p3")).toBe(false);
     });
   });
@@ -838,7 +879,7 @@ describe("GameStateManager", () => {
       const p2 = gm.addPlayer("p2", "Bob");
       p1.position = { x: 500, y: 500 };
       p2.position = { x: 510, y: 500 };
-      gm.startCombat("p1");
+      startCombat(gm, "p1");
 
       const result = gm.checkDistanceEscape("p1");
       expect(result.escaped).toBe(false);
@@ -849,7 +890,7 @@ describe("GameStateManager", () => {
       const p2 = gm.addPlayer("p2", "Bob");
       p1.position = { x: 500, y: 500 };
       p2.position = { x: 510, y: 500 };
-      gm.startCombat("p1");
+      startCombat(gm, "p1");
 
       // Move p1 far away
       p1.position = { x: 2000, y: 500 };
@@ -865,7 +906,7 @@ describe("GameStateManager", () => {
       p1.position = { x: 500, y: 500 };
       p2.position = { x: 510, y: 500 };
       p3.position = { x: 520, y: 500 };
-      gm.startCombat("p1");
+      startCombat(gm, "p1");
       const zone = gm.state.combatZone!;
 
       // Move p1 far away
@@ -881,7 +922,7 @@ describe("GameStateManager", () => {
       const p2 = gm.addPlayer("p2", "Bob");
       p1.position = { x: 500, y: 500 };
       p2.position = { x: 510, y: 500 };
-      gm.startCombat("p1");
+      startCombat(gm, "p1");
 
       p1.position = { x: 2000, y: 2000 };
       gm.checkDistanceEscape("p1");
@@ -897,7 +938,7 @@ describe("GameStateManager", () => {
       p1.position = { x: 500, y: 500 };
       p2.position = { x: 510, y: 500 };
       p3.position = { x: 520, y: 500 };
-      gm.startCombat("p1");
+      startCombat(gm, "p1");
 
       // Far from p2 and p3, but p3 moved close
       p1.position = { x: 2000, y: 2000 };
@@ -912,7 +953,7 @@ describe("GameStateManager", () => {
       const p2 = gm.addPlayer("p2", "Bob");
       p1.position = { x: 500, y: 500 };
       p2.position = { x: 510, y: 500 };
-      gm.startCombat("p1");
+      startCombat(gm, "p1");
 
       const outsider = gm.addPlayer("p3", "Charlie");
       outsider.position = { x: 9999, y: 9999 };
@@ -960,7 +1001,7 @@ describe("GameStateManager", () => {
         // Place both near each other
         npc.position = { x: 500, y: 500 };
         p1.position = { x: 510, y: 500 };
-        gm.startCombat("p1");
+        startCombat(gm, "p1");
         expect(gm.isInCombat("npc1")).toBe(true);
 
         const dsBefore = gm.playerDriveStates.get("npc1");
@@ -984,7 +1025,7 @@ describe("GameStateManager", () => {
         const p1 = gm.addPlayer("p1", "Alice");
         npc.position = { x: 500, y: 500 };
         p1.position = { x: 510, y: 500 };
-        gm.startCombat("p1");
+        startCombat(gm, "p1");
         const zone = gm.state.combatZone!;
 
         // If it's p1's turn, NPC should return null
@@ -998,7 +1039,7 @@ describe("GameStateManager", () => {
         const p1 = gm.addPlayer("p1", "Alice");
         npc.position = { x: 500, y: 500 };
         p1.position = { x: 510, y: 500 };
-        gm.startCombat("p1");
+        startCombat(gm, "p1");
         const zone = gm.state.combatZone!;
 
         // Advance to NPC turn if needed
@@ -1029,7 +1070,7 @@ describe("GameStateManager", () => {
           const p1 = gm2.addPlayer("p1", "Alice");
           npc.position = { x: 500, y: 500 };
           p1.position = { x: 510, y: 500 };
-          gm2.startCombat("p1");
+          startCombat(gm2, "p1");
           const zone = gm2.state.combatZone!;
           if (zone.currentTurn !== "npc1") gm2.advanceTurn();
 

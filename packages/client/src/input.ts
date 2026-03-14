@@ -1,10 +1,11 @@
 import type { Vec2, GamePhase, CombatZone, DriveState, Player } from "@game/shared";
-import { PHYSICS, simulatePhysics } from "@game/shared";
+import { PHYSICS, WeaponKind, simulatePhysics } from "@game/shared";
 import type { Network } from "./network.js";
 import type { Renderer } from "./renderer.js";
 import {
   isPlayerInCombat,
   shouldSendDriveState,
+  findNearestPlayer,
 } from "./input-utils.js";
 
 interface CombatPreview {
@@ -45,12 +46,20 @@ export class InputHandler {
   /** Callback for Escape key when input is blocked (e.g. close garage) */
   onBlockedEscape: (() => void) | null = null;
 
+  // ── Auto-targeting ──
+  autoTargetEnabled = true;
+  /** Manually selected target (overrides auto-nearest). */
+  selectedTargetId: string | null = null;
+  /** Computed nearest target per vehicle (vehicleId -> targetId). */
+  computedTargets: Map<string, string> = new Map();
+
   constructor(network: Network, renderer: Renderer) {
     this.network = network;
     this.renderer = renderer;
     this.setupKeyboard();
     this.setupMouse();
     this.setupCombatButtons();
+    this.setupWeaponBar();
   }
 
   private setupKeyboard(): void {
@@ -119,14 +128,12 @@ export class InputHandler {
         }
       }
 
-      // Space: end turn (commit movement + advance), or start combat
+      // Space: end turn in combat
       if (e.key === " ") {
         if (this.isInCombat && this.isMyTurn) {
           this.commitMovementThen(() => {
             this.network.send({ type: "endTurn" });
           });
-        } else if (!this.combatZone) {
-          this.network.send({ type: "startCombat" });
         }
       }
 
@@ -155,30 +162,83 @@ export class InputHandler {
   }
 
   private setupMouse(): void {
-    // Mouse clicks reserved for future targeting UI
+    // Click to select a target
+    document.addEventListener("click", (e) => {
+      if (this.inputBlocked) return;
+      // Don't intercept clicks on UI elements
+      const target = e.target as HTMLElement;
+      if (target.closest("#weapon-bar, #combat-ui, #ui-overlay, #zoom-controls, #bottom-left-stack, #game-log, #world-map-overlay, #garage-overlay, #login-screen")) return;
+
+      const worldPos = this.renderer.screenToWorld(e.clientX, e.clientY);
+      const clickedId = findNearestPlayer(worldPos, this.players, this.localPlayerId, 50);
+      if (clickedId) {
+        this.selectedTargetId = clickedId;
+        this.autoTargetEnabled = true;
+        this.updateAutoTargetButton();
+      }
+    });
   }
 
-  private setupCombatButtons(): void {
+  private setupWeaponBar(): void {
     document.getElementById("btn-fire-laser")?.addEventListener("click", (e) => {
       e.stopPropagation();
-      this.commitMovementThen(() => {
-        this.network.send({
-          type: "combatAction",
-          action: { type: "fireLaser" },
-        });
-      });
+      this.fireWeapon("Laser");
     });
 
     document.getElementById("btn-fire-projectile")?.addEventListener("click", (e) => {
       e.stopPropagation();
-      this.commitMovementThen(() => {
-        this.network.send({
-          type: "combatAction",
-          action: { type: "fireProjectile" },
-        });
-      });
+      this.fireWeapon("Projectile");
     });
 
+    document.getElementById("btn-auto-target")?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      this.autoTargetEnabled = !this.autoTargetEnabled;
+      if (!this.autoTargetEnabled) {
+        this.selectedTargetId = null;
+      }
+      this.updateAutoTargetButton();
+    });
+  }
+
+  private updateAutoTargetButton(): void {
+    const btn = document.getElementById("btn-auto-target");
+    if (btn) {
+      btn.classList.toggle("active", this.autoTargetEnabled);
+    }
+  }
+
+  private fireWeapon(kind: "Laser" | "Projectile"): void {
+    const effectiveTarget = this.getEffectiveTarget();
+
+    if (this.isInCombat && this.isMyTurn) {
+      // In combat: commit movement then fire
+      this.commitMovementThen(() => {
+        this.network.send({
+          type: "fireWeapon",
+          weaponKind: kind,
+          targetId: effectiveTarget,
+        });
+      });
+    } else if (!this.isInCombat) {
+      // Exploration: fire weapon (may start combat)
+      this.network.send({
+        type: "fireWeapon",
+        weaponKind: kind,
+        targetId: effectiveTarget,
+      });
+    }
+  }
+
+  /** Get the effective target: manual selection > auto-nearest > undefined (fire into void). */
+  private getEffectiveTarget(): string | undefined {
+    if (this.selectedTargetId) return this.selectedTargetId;
+    if (this.autoTargetEnabled && this.localPlayerId) {
+      return this.computedTargets.get(this.localPlayerId);
+    }
+    return undefined;
+  }
+
+  private setupCombatButtons(): void {
     document.getElementById("btn-end-turn")?.addEventListener("click", (e) => {
       e.stopPropagation();
       this.commitMovementThen(() => {
@@ -214,7 +274,6 @@ export class InputHandler {
     const opposite = dir === "up" ? "down" : "up";
     const last = this.combatSpeedInputs[this.combatSpeedInputs.length - 1];
     if (last === opposite) {
-      // Undo: pop the last input and reverse its effect
       this.combatSpeedInputs.pop();
       this.driveState.targetSpeed += opposite === "up" ? -1 : 1;
     } else if (this.combatSpeedInputs.length < InputHandler.COMBAT_MAX_SPEED_STEPS) {
@@ -230,11 +289,10 @@ export class InputHandler {
     const opposite = dir === "left" ? "right" : "left";
     const last = this.combatSteeringInputs[this.combatSteeringInputs.length - 1];
     if (last === opposite) {
-      // Undo: pop the last input and reverse its effect
       this.combatSteeringInputs.pop();
       this.driveState.steeringAngle += opposite === "left"
-        ? PHYSICS.STEERING_STEP   // undo a left → add back
-        : -PHYSICS.STEERING_STEP; // undo a right → subtract back
+        ? PHYSICS.STEERING_STEP
+        : -PHYSICS.STEERING_STEP;
     } else if (this.combatSteeringInputs.length < InputHandler.COMBAT_MAX_STEERING_STEPS) {
       this.combatSteeringInputs.push(dir);
       this.driveState.steeringAngle = dir === "left"
@@ -246,7 +304,6 @@ export class InputHandler {
   /** Commit the current movement preview, then execute a follow-up action.
    *  If no preview exists but the car has speed, compute a coast preview first. */
   private commitMovementThen(action: () => void): void {
-    // If no preview yet, compute coast trajectory on the fly
     if (!this.combatPreview && this.localPlayerId) {
       const player = this.players.get(this.localPlayerId);
       if (player && player.velocity.speed > 0) {
@@ -316,8 +373,12 @@ export class InputHandler {
     }
   }
 
-  /** Call this every frame to send input state changes */
+  /** Call this every frame to send input state changes and update targeting */
   tick(): void {
+    this.updateAutoTargets();
+    this.validateSelectedTarget();
+    this.updateWeaponButtons();
+
     if (this.isInCombat && this.isMyTurn) {
       // Combat preview mode -- don't send input to server
       if (this.isAnimating) return;
@@ -351,7 +412,6 @@ export class InputHandler {
           remainingTicks
         );
 
-        // Only show preview if the car actually moves somewhere
         if (result.distanceUsed > 0) {
           this.combatPreview = {
             driveState: previewDriveState,
@@ -369,6 +429,108 @@ export class InputHandler {
 
     // Exploration mode: send drive state to server when changed
     this.sendDriveState();
+  }
+
+  /** Compute nearest valid target for every vehicle. */
+  private updateAutoTargets(): void {
+    this.computedTargets.clear();
+    for (const [id, player] of this.players) {
+      let nearestId: string | null = null;
+      let nearestDist = Infinity;
+      for (const [otherId, other] of this.players) {
+        if (otherId === id) continue;
+        const dx = other.position.x - player.position.x;
+        const dy = other.position.y - player.position.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < nearestDist) {
+          nearestDist = dist;
+          nearestId = otherId;
+        }
+      }
+      if (nearestId) {
+        this.computedTargets.set(id, nearestId);
+      }
+    }
+  }
+
+  /** Clear selected target if it's no longer valid. */
+  private validateSelectedTarget(): void {
+    if (!this.selectedTargetId) return;
+    const target = this.players.get(this.selectedTargetId);
+    if (!target) { this.selectedTargetId = null; return; }
+    if (target.car.baseHealth <= 0) { this.selectedTargetId = null; return; }
+
+    // In combat: check if target left combat
+    if (this.combatZone && !this.combatZone.combatantIds.includes(this.selectedTargetId)) {
+      this.selectedTargetId = null;
+      return;
+    }
+
+    // Check weapon range — clear if out of range of all weapons
+    if (this.localPlayerId) {
+      const local = this.players.get(this.localPlayerId);
+      if (local) {
+        const dx = target.position.x - local.position.x;
+        const dy = target.position.y - local.position.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const maxRange = Math.max(
+          ...local.car.parts
+            .filter((p) => p.stats.weaponKind)
+            .map((p) => p.stats.range ?? 0)
+        );
+        if (dist > maxRange) {
+          this.selectedTargetId = null;
+        }
+      }
+    }
+  }
+
+  /** Update weapon button enabled/disabled state and labels. */
+  private updateWeaponButtons(): void {
+    if (!this.localPlayerId) return;
+    const player = this.players.get(this.localPlayerId);
+    if (!player) return;
+
+    const inCombatNotMyTurn = this.isInCombat && !this.isMyTurn;
+
+    const laser = player.car.parts.find(
+      (p) => p.stats.weaponKind === WeaponKind.Laser
+    );
+    const projectile = player.car.parts.find(
+      (p) => p.stats.weaponKind === WeaponKind.Projectile
+    );
+
+    const laserBtn = document.getElementById("btn-fire-laser") as HTMLButtonElement | null;
+    if (laserBtn) {
+      const energy = laser?.stats.energy ?? 0;
+      const cd = laser?.stats.cooldown ?? 0;
+      if (cd > 0) {
+        laserBtn.textContent = `Laser [CD:${cd}]`;
+        laserBtn.disabled = true;
+      } else {
+        laserBtn.textContent = `Laser [${energy}]`;
+        laserBtn.disabled = energy <= 0 || inCombatNotMyTurn;
+      }
+    }
+
+    const projBtn = document.getElementById("btn-fire-projectile") as HTMLButtonElement | null;
+    if (projBtn) {
+      const ammo = projectile?.stats.ammo ?? 0;
+      const cd = projectile?.stats.cooldown ?? 0;
+      if (cd > 0) {
+        projBtn.textContent = `Gun [CD:${cd}]`;
+        projBtn.disabled = true;
+      } else {
+        projBtn.textContent = `Gun [${ammo}]`;
+        projBtn.disabled = ammo <= 0 || inCombatNotMyTurn;
+      }
+    }
+
+    // Combat UI (End Turn) visibility
+    const combatUi = document.getElementById("combat-ui");
+    if (combatUi) {
+      combatUi.style.display = (this.isInCombat && this.isMyTurn) ? "block" : "none";
+    }
   }
 
   private getEffectiveSpeed(player: Player): number {

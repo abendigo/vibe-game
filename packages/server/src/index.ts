@@ -379,23 +379,53 @@ async function handleMessage(ws: WebSocket, msg: ClientMessage): Promise<void> {
       break;
     }
 
-    case "startCombat": {
+    case "fireWeapon": {
       const playerId = clients.get(ws);
       if (!playerId) return;
 
-      const combatZone = gameState.startCombat(playerId);
-      if (combatZone) {
-        broadcast({ type: "combatStart", combatZone });
-        broadcast({
-          type: "turnChange",
-          playerId: combatZone.currentTurn,
-        });
-        scheduleNPCTurn();
+      if (gameState.isInCombat(playerId)) {
+        // In combat: process as combat action (must be their turn)
+        const action = msg.weaponKind === "Laser"
+          ? { type: "fireLaser" as const, targetId: msg.targetId }
+          : { type: "fireProjectile" as const, targetId: msg.targetId };
+        const result = gameState.processCombatAction(playerId, action);
+        broadcast({ type: "combatUpdate", action, result });
+        if (result.success) {
+          const nextPlayer = gameState.advanceTurn();
+          if (nextPlayer) {
+            broadcast({ type: "turnChange", playerId: nextPlayer });
+          }
+          scheduleNPCTurn();
+        }
+        broadcastGameState();
       } else {
-        send(ws, {
-          type: "error",
-          message: "Cannot start combat (need 2+ nearby players, or combat already active)",
-        });
+        // Exploration: fire weapon, potentially starting combat
+        const { shotResult, combatZone } = gameState.fireWeaponExploration(
+          playerId, msg.weaponKind, msg.targetId
+        );
+
+        if (!shotResult.success) {
+          send(ws, { type: "error", message: shotResult.message });
+          break;
+        }
+
+        // Broadcast the shot animation to everyone
+        const shotAction = msg.weaponKind === "Laser"
+          ? { type: "fireLaser" as const, targetId: msg.targetId }
+          : { type: "fireProjectile" as const, targetId: msg.targetId };
+        broadcast({ type: "combatUpdate", action: shotAction, result: shotResult });
+
+        if (combatZone) {
+          // Combat started — broadcast zone and advance past shooter's free action
+          broadcast({ type: "combatStart", combatZone });
+          const nextPlayer = gameState.advanceTurn();
+          if (nextPlayer) {
+            broadcast({ type: "turnChange", playerId: nextPlayer });
+          }
+          scheduleNPCTurn();
+        }
+
+        broadcastGameState();
       }
       break;
     }

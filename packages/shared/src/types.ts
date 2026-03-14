@@ -22,6 +22,7 @@ export const PHYSICS = {
   MAP_TILES: 200,              // MAP_SIZE / TILE_SIZE
   VISIBILITY_RADIUS: 2200,     // server sends player data within this radius
   MINIMAP_RADIUS: 2000,        // minimap shows this radius around the player
+  COMBAT_ZONE_RANGE_MULTIPLIER: 3, // combat zone radius = max weapon range * this
 } as const;
 
 export enum TileType {
@@ -207,8 +208,8 @@ export interface CombatResult {
 export type CombatAction =
   | { type: "move"; target: Vec2 }
   | { type: "attack"; targetId: string; weaponPartId: string }
-  | { type: "fireLaser" }
-  | { type: "fireProjectile" }
+  | { type: "fireLaser"; targetId?: string }
+  | { type: "fireProjectile"; targetId?: string }
   | { type: "useItem"; itemId: string }
   | { type: "wait" };
 
@@ -223,7 +224,7 @@ export type ClientMessage =
   | { type: "join"; name: string; password: string }
   | { type: "reconnect"; token: string }
   | { type: "driveState"; targetSpeed: number; steeringAngle: number }
-  | { type: "startCombat" }
+  | { type: "fireWeapon"; weaponKind: "Laser" | "Projectile"; targetId?: string }
   | { type: "combatAction"; action: CombatAction }
   | { type: "combatMoveConfirm"; driveState: DriveState; ticks: number }
   | { type: "endTurn" }

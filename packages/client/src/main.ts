@@ -387,6 +387,12 @@ async function main(): Promise<void> {
       input.maxSpeed,
       gameState.combatZone
     );
+    renderer.updateTargetingLines(
+      gameState.players,
+      input.computedTargets,
+      input.autoTargetEnabled,
+      input.selectedTargetId
+    );
 
     // Update world map marker when visible
     if (renderer.isWorldMapVisible && localPlayerId) {

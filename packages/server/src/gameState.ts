@@ -17,7 +17,6 @@ import {
   CIRCUIT_DEPOT_STOPS,
 } from "@game/shared";
 
-const COMBAT_RADIUS = 300;
 const NPC_FIRE_CHANCE = 0.25;
 const NPC_WAYPOINT_THRESHOLD = 80; // px — distance to advance to next waypoint
 const NPC_DEPOT_PAUSE_MS = 60_000; // 1 minute pause at depot stops
@@ -239,8 +238,24 @@ export class GameStateManager {
       }
     }
 
-    // Step 2: Maybe fire (25% chance)
+    // Step 2: Maybe fire (25% chance) — pick nearest target
     if (Math.random() < NPC_FIRE_CHANCE) {
+      // Find nearest enemy combatant
+      let nearestTargetId: string | undefined;
+      let nearestDist = Infinity;
+      for (const otherId of zone.combatantIds) {
+        if (otherId === player.id) continue;
+        const other = this.state.players.get(otherId);
+        if (!other) continue;
+        const tdx = other.position.x - player.position.x;
+        const tdy = other.position.y - player.position.y;
+        const tdist = Math.sqrt(tdx * tdx + tdy * tdy);
+        if (tdist < nearestDist) {
+          nearestDist = tdist;
+          nearestTargetId = otherId;
+        }
+      }
+
       const laser = player.car.parts.find(
         (p) => p.stats.weaponKind === WeaponKind.Laser && (p.stats.energy ?? 0) > 0 && (p.stats.cooldown ?? 0) <= 0
       );
@@ -249,11 +264,11 @@ export class GameStateManager {
       );
 
       if (laser) {
-        const result = this.processCombatAction(zone.currentTurn, { type: "fireLaser" });
+        const result = this.processCombatAction(zone.currentTurn, { type: "fireLaser", targetId: nearestTargetId });
         if (result.success) return { moveResult, combatResult: result, combatAction: "fireLaser" };
       }
       if (projectile) {
-        const result = this.processCombatAction(zone.currentTurn, { type: "fireProjectile" });
+        const result = this.processCombatAction(zone.currentTurn, { type: "fireProjectile", targetId: nearestTargetId });
         if (result.success) return { moveResult, combatResult: result, combatAction: "fireProjectile" };
       }
     }
@@ -379,40 +394,88 @@ export class GameStateManager {
     return true;
   }
 
-  startCombat(initiatorId: string): CombatZone | null {
+  /** Get max weapon range across all weapons on a player's car. */
+  getMaxWeaponRange(player: Player): number {
+    let maxRange = 0;
+    for (const part of player.car.parts) {
+      if (part.type === CarPartType.Weapon && (part.stats.range ?? 0) > maxRange) {
+        maxRange = part.stats.range ?? 0;
+      }
+    }
+    return maxRange;
+  }
+
+  /**
+   * Start combat triggered by firing a weapon.
+   * Combat zone = union of circles around shooter and target,
+   * each with radius = max weapon range * multiplier.
+   * Shooter is placed first in turn order (free action).
+   */
+  startCombatFromShot(shooterId: string, targetId?: string): CombatZone | null {
     // Can't start combat if one is already active
     if (this.state.combatZone) return null;
 
-    const initiator = this.state.players.get(initiatorId);
-    if (!initiator) return null;
+    const shooter = this.state.players.get(shooterId);
+    if (!shooter) return null;
 
-    const center = { ...initiator.position };
+    const target = targetId ? this.state.players.get(targetId) : undefined;
 
-    // Find all players within the combat radius
+    const maxRange = this.getMaxWeaponRange(shooter);
+    const zoneRadius = maxRange * PHYSICS.COMBAT_ZONE_RANGE_MULTIPLIER;
+
+    // Collect combatants: anyone within zoneRadius of shooter OR target (union of two circles)
     const combatantIds: string[] = [];
     for (const [id, player] of this.state.players) {
-      const dx = player.position.x - center.x;
-      const dy = player.position.y - center.y;
-      if (Math.sqrt(dx * dx + dy * dy) <= COMBAT_RADIUS) {
+      const dxShooter = player.position.x - shooter.position.x;
+      const dyShooter = player.position.y - shooter.position.y;
+      const distToShooter = Math.sqrt(dxShooter * dxShooter + dyShooter * dyShooter);
+
+      let distToTarget = Infinity;
+      if (target) {
+        const dxTarget = player.position.x - target.position.x;
+        const dyTarget = player.position.y - target.position.y;
+        distToTarget = Math.sqrt(dxTarget * dxTarget + dyTarget * dyTarget);
+      }
+
+      if (distToShooter <= zoneRadius || distToTarget <= zoneRadius) {
         combatantIds.push(id);
       }
     }
 
+    // Need at least 2 combatants for combat
     if (combatantIds.length < 2) return null;
 
-    // Shuffle for turn order
-    const turnOrder = [...combatantIds];
-    for (let i = turnOrder.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [turnOrder[i], turnOrder[j]] = [turnOrder[j], turnOrder[i]];
+    // Compute zone center as midpoint between shooter and target (or just shooter if no target)
+    let center: Vec2;
+    let effectiveRadius: number;
+    if (target) {
+      center = {
+        x: (shooter.position.x + target.position.x) / 2,
+        y: (shooter.position.y + target.position.y) / 2,
+      };
+      const dx = shooter.position.x - target.position.x;
+      const dy = shooter.position.y - target.position.y;
+      const halfDist = Math.sqrt(dx * dx + dy * dy) / 2;
+      effectiveRadius = halfDist + zoneRadius;
+    } else {
+      center = { ...shooter.position };
+      effectiveRadius = zoneRadius;
     }
+
+    // Build turn order: shooter first, rest shuffled
+    const others = combatantIds.filter((id) => id !== shooterId);
+    for (let i = others.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [others[i], others[j]] = [others[j], others[i]];
+    }
+    const turnOrder = [shooterId, ...others];
 
     const zone: CombatZone = {
       center,
-      radius: COMBAT_RADIUS,
+      radius: effectiveRadius,
       combatantIds,
       turnOrder,
-      currentTurn: turnOrder[0],
+      currentTurn: shooterId,
     };
 
     this.state.combatZone = zone;
@@ -428,6 +491,36 @@ export class GameStateManager {
     }
 
     return zone;
+  }
+
+  /**
+   * Fire a weapon during exploration. This may trigger combat.
+   * The shot is a free action — combat starts after it resolves.
+   * Returns the shot result and optionally the new combat zone.
+   */
+  fireWeaponExploration(
+    shooterId: string,
+    weaponKind: "Laser" | "Projectile",
+    targetId?: string
+  ): { shotResult: CombatResult; combatZone: CombatZone | null } {
+    const player = this.state.players.get(shooterId);
+    if (!player) {
+      return {
+        shotResult: { success: false, message: "Player not found" },
+        combatZone: null,
+      };
+    }
+
+    const kind = weaponKind === "Laser" ? WeaponKind.Laser : WeaponKind.Projectile;
+    const shotResult = this.fireWeapon(player, kind, targetId);
+
+    if (!shotResult.success) {
+      return { shotResult, combatZone: null };
+    }
+
+    // Try to start combat (only if there are other players nearby)
+    const combatZone = this.startCombatFromShot(shooterId, targetId);
+    return { shotResult, combatZone };
   }
 
   endCombat(): void {
@@ -546,10 +639,10 @@ export class GameStateManager {
       }
 
       case "fireLaser":
-        return this.fireWeapon(player, zone, WeaponKind.Laser);
+        return this.fireWeapon(player, WeaponKind.Laser, action.targetId);
 
       case "fireProjectile":
-        return this.fireWeapon(player, zone, WeaponKind.Projectile);
+        return this.fireWeapon(player, WeaponKind.Projectile, action.targetId);
 
       case "useItem": {
         return { success: false, message: "Items not implemented yet" };
@@ -561,10 +654,15 @@ export class GameStateManager {
     }
   }
 
-  private fireWeapon(
+  /**
+   * Fire a weapon. If targetId is provided, fire at that specific target.
+   * If targetId is undefined, fire into the void (consume ammo, hit nothing).
+   * Works in both combat and exploration contexts.
+   */
+  fireWeapon(
     player: Player,
-    zone: CombatZone,
-    kind: WeaponKind
+    kind: WeaponKind,
+    targetId?: string
   ): CombatResult {
     const weapon = player.car.parts.find(
       (p) =>
@@ -590,27 +688,8 @@ export class GameStateManager {
       }
     }
 
-    // Find targets in range
     const range = weapon.stats.range ?? 100;
-    const targetsInRange: Player[] = [];
-    for (const id of zone.combatantIds) {
-      if (id === player.id) continue;
-      const target = this.state.players.get(id);
-      if (!target) continue;
-      const dx = target.position.x - player.position.x;
-      const dy = target.position.y - player.position.y;
-      if (Math.sqrt(dx * dx + dy * dy) <= range) {
-        targetsInRange.push(target);
-      }
-    }
-
-    if (targetsInRange.length === 0) {
-      return { success: false, message: "No targets in range" };
-    }
-
-    // Random target selection
-    const target =
-      targetsInRange[Math.floor(Math.random() * targetsInRange.length)];
+    const kindLabel = kind === WeaponKind.Laser ? "laser" : "projectile";
 
     // Consume resource and start cooldown
     if (kind === WeaponKind.Laser) {
@@ -620,10 +699,56 @@ export class GameStateManager {
     }
     weapon.stats.cooldown = weapon.stats.maxCooldown ?? 0;
 
+    // No target — fire into the void
+    if (!targetId) {
+      const toX = player.position.x + Math.cos(player.velocity.heading) * range;
+      const toY = player.position.y + Math.sin(player.velocity.heading) * range;
+      return {
+        success: true,
+        message: `${player.name} fired ${kindLabel} into the void`,
+        animation: {
+          kind: kindLabel,
+          from: { ...player.position },
+          to: { x: toX, y: toY },
+          hit: false,
+        },
+      };
+    }
+
+    // Validate target
+    const target = this.state.players.get(targetId);
+    if (!target) {
+      return { success: true, message: `${player.name} fired ${kindLabel} — target gone`,
+        animation: {
+          kind: kindLabel,
+          from: { ...player.position },
+          to: { x: player.position.x + Math.cos(player.velocity.heading) * range,
+                 y: player.position.y + Math.sin(player.velocity.heading) * range },
+          hit: false,
+        },
+      };
+    }
+
+    // Range check
     const dx = target.position.x - player.position.x;
     const dy = target.position.y - player.position.y;
-
-    const kindLabel = kind === WeaponKind.Laser ? "laser" : "projectile";
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist > range) {
+      // Target out of range — shot still consumed, fires toward target but misses
+      return {
+        success: true,
+        message: `${player.name} fired ${kindLabel} at ${target.name} — out of range`,
+        animation: {
+          kind: kindLabel,
+          from: { ...player.position },
+          to: {
+            x: player.position.x + (dx / dist) * range,
+            y: player.position.y + (dy / dist) * range,
+          },
+          hit: false,
+        },
+      };
+    }
 
     // Hit chance: base 70% + gunnery*5%, clamped 30-95%
     const hitChance = Math.max(30, Math.min(95, 70 + player.skills.gunnery * 5));
@@ -639,7 +764,6 @@ export class GameStateManager {
         animation: {
           kind: kindLabel,
           from: { ...player.position },
-          // Offset the "to" slightly to show a miss
           to: {
             x: target.position.x + (Math.random() - 0.5) * 60,
             y: target.position.y + (Math.random() - 0.5) * 60,

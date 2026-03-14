@@ -25,6 +25,37 @@
         pointer-events: none;
         z-index: 10;
       }
+      #weapon-bar {
+        position: fixed;
+        bottom: 50px;
+        left: 50%;
+        transform: translateX(-50%);
+        color: #fff;
+        font-family: monospace;
+        font-size: 14px;
+        z-index: 10;
+        background: rgba(0,0,0,0.7);
+        padding: 10px 16px;
+        border-radius: 8px;
+        display: flex;
+        gap: 6px;
+      }
+      #weapon-bar button {
+        padding: 6px 14px;
+        cursor: pointer;
+        font-family: monospace;
+        background: #333;
+        color: #fff;
+        border: 1px solid #666;
+        border-radius: 4px;
+      }
+      #weapon-bar button:hover:not(:disabled) { background: #555; }
+      #weapon-bar button:disabled { opacity: 0.4; cursor: default; }
+      #btn-auto-target.active {
+        background: #1a6b4a;
+        border-color: #66bb6a;
+        color: #66bb6a;
+      }
       #combat-ui {
         position: fixed;
         bottom: 10px;
@@ -487,9 +518,12 @@
       <button type="button" id="btn-zoom-out">&minus;</button>
       <button type="button" id="btn-zoom-reset">Reset</button>
     </div>
+    <div id="weapon-bar">
+      <button type="button" id="btn-auto-target" class="active">Auto Target</button>
+      <button type="button" id="btn-fire-laser" disabled>Laser [10]</button>
+      <button type="button" id="btn-fire-projectile" disabled>Gun [20]</button>
+    </div>
     <div id="combat-ui">
-      <button type="button" id="btn-fire-laser">Laser [10]</button>
-      <button type="button" id="btn-fire-projectile">Gun [20]</button>
       <button type="button" id="btn-end-turn">End Turn [Space]</button>
     </div>
     <div id="world-map-overlay" class="hidden">
