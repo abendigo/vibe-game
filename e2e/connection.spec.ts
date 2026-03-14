@@ -6,8 +6,8 @@ test.describe("Connection & Auth", () => {
     const name = uniqueName("Connect");
     await joinGame(page, name);
 
-    // Canvas should be visible
-    const canvas = page.locator("canvas");
+    // Game canvas (Pixi.js) should be visible
+    const canvas = page.locator("canvas:not(#world-map-canvas)");
     await expect(canvas).toBeVisible();
 
     // Phase should show Exploring

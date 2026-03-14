@@ -22,7 +22,8 @@ export async function joinGame(
   password = "testpass"
 ): Promise<void> {
   await page.goto("/");
-  await page.waitForSelector("canvas", { timeout: 10_000 });
+  // Wait for the Pixi.js game canvas (not the world-map-canvas)
+  await page.waitForSelector("canvas:not(#world-map-canvas)", { timeout: 10_000 });
 
   // Fill and submit the login form
   await page.fill("#login-name", name);

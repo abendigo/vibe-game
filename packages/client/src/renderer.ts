@@ -60,6 +60,11 @@ export class Renderer {
   private static readonly ZOOM_STEP = 0.25;
   private zoom = Renderer.DEFAULT_ZOOM;
 
+  // World map overlay
+  private worldMapCanvas: HTMLCanvasElement | null = null;
+  private worldMapBaseImage: ImageData | null = null;
+  private worldMapVisible = false;
+
   localPlayerId: string | null = null;
 
   constructor() {
@@ -125,6 +130,12 @@ export class Renderer {
     document.getElementById("btn-zoom-in")?.addEventListener("click", () => this.zoomIn());
     document.getElementById("btn-zoom-out")?.addEventListener("click", () => this.zoomOut());
     document.getElementById("btn-zoom-reset")?.addEventListener("click", () => this.zoomReset());
+
+    // Pre-render world map
+    this.worldMapCanvas = document.getElementById("world-map-canvas") as HTMLCanvasElement | null;
+    if (this.worldMapCanvas) {
+      this.preRenderWorldMap();
+    }
   }
 
   zoomIn(): void {
@@ -140,6 +151,121 @@ export class Renderer {
   zoomReset(): void {
     this.zoom = Renderer.DEFAULT_ZOOM;
     this.updateZoomDisplay();
+  }
+
+  // ── World map overlay ──
+
+  private static readonly WORLD_MAP_TILE_PX = 3; // pixels per tile on the world map
+
+  private preRenderWorldMap(): void {
+    const canvas = this.worldMapCanvas!;
+    const tpx = Renderer.WORLD_MAP_TILE_PX;
+    const mt = PHYSICS.MAP_TILES;
+    canvas.width = mt * tpx;
+    canvas.height = mt * tpx;
+
+    const ctx = canvas.getContext("2d")!;
+    const tiles = WORLD_MAP.tiles;
+
+    for (let row = 0; row < mt; row++) {
+      for (let col = 0; col < mt; col++) {
+        const tile = tiles[row][col];
+        switch (tile) {
+          case TileType.Road:
+            ctx.fillStyle = "#555555";
+            break;
+          case TileType.Building: {
+            const bc = getBuildingColor(row, col) ?? 0x6a4a3a;
+            ctx.fillStyle = `#${bc.toString(16).padStart(6, "0")}`;
+            break;
+          }
+          default:
+            ctx.fillStyle = "#2a4a2e";
+        }
+        ctx.fillRect(col * tpx, row * tpx, tpx, tpx);
+      }
+    }
+
+    // Draw town name labels
+    ctx.font = "bold 14px monospace";
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#ffffff";
+    ctx.strokeStyle = "#000000";
+    ctx.lineWidth = 3;
+    for (const town of WORLD_MAP.towns) {
+      const cx = (town.tileOrigin.x + 20) * tpx;
+      const cy = (town.tileOrigin.y + 20) * tpx;
+      ctx.strokeText(town.name, cx, cy);
+      ctx.fillText(town.name, cx, cy);
+    }
+
+    // Save base image so we can redraw the marker without re-rendering tiles
+    this.worldMapBaseImage = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  }
+
+  toggleWorldMap(): void {
+    this.worldMapVisible = !this.worldMapVisible;
+    const overlay = document.getElementById("world-map-overlay");
+    if (overlay) {
+      overlay.classList.toggle("hidden", !this.worldMapVisible);
+    }
+  }
+
+  get isWorldMapVisible(): boolean {
+    return this.worldMapVisible;
+  }
+
+  updateWorldMapMarker(playerPosition: Vec2): void {
+    if (!this.worldMapVisible || !this.worldMapCanvas || !this.worldMapBaseImage) return;
+
+    const ctx = this.worldMapCanvas.getContext("2d")!;
+    const tpx = Renderer.WORLD_MAP_TILE_PX;
+    const ts = PHYSICS.TILE_SIZE;
+
+    // Restore base image (clear previous marker)
+    ctx.putImageData(this.worldMapBaseImage, 0, 0);
+
+    // Draw player marker
+    const px = (playerPosition.x / ts) * tpx;
+    const py = (playerPosition.y / ts) * tpx;
+
+    // Pulsing white circle with crosshair
+    ctx.beginPath();
+    ctx.arc(px, py, 8, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(255, 255, 255, 0.3)";
+    ctx.fill();
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Inner dot
+    ctx.beginPath();
+    ctx.arc(px, py, 3, 0, Math.PI * 2);
+    ctx.fillStyle = "#4fc3f7";
+    ctx.fill();
+
+    // Crosshair lines
+    ctx.beginPath();
+    ctx.moveTo(px - 12, py);
+    ctx.lineTo(px - 5, py);
+    ctx.moveTo(px + 5, py);
+    ctx.lineTo(px + 12, py);
+    ctx.moveTo(px, py - 12);
+    ctx.lineTo(px, py - 5);
+    ctx.moveTo(px, py + 5);
+    ctx.lineTo(px, py + 12);
+    ctx.strokeStyle = "#4fc3f7";
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // "YOU" label
+    ctx.font = "bold 10px monospace";
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#4fc3f7";
+    ctx.strokeStyle = "#000000";
+    ctx.lineWidth = 2;
+    ctx.strokeText("YOU", px, py - 14);
+    ctx.fillText("YOU", px, py - 14);
   }
 
   private updateZoomDisplay(): void {

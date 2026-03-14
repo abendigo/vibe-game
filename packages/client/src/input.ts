@@ -117,6 +117,17 @@ export class InputHandler {
         }
       }
 
+      // M: toggle world map overlay
+      if (key === "m") {
+        this.renderer.toggleWorldMap();
+      }
+
+      // Escape: close world map if open, or undo movement planning
+      if (e.key === "Escape" && this.renderer.isWorldMapVisible) {
+        this.renderer.toggleWorldMap();
+        return;
+      }
+
       // Escape: undo movement planning — restore driveState to start-of-turn values
       if (e.key === "Escape" && this.isInCombat && this.isMyTurn) {
         this.driveState = { ...this.combatTurnStartDriveState };

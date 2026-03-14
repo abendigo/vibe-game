@@ -341,6 +341,14 @@ async function main(): Promise<void> {
       input.maxSpeed,
       gameState.combatZone
     );
+
+    // Update world map marker when visible
+    if (renderer.isWorldMapVisible && localPlayerId) {
+      const localPlayer = gameState.players.get(localPlayerId);
+      if (localPlayer) {
+        renderer.updateWorldMapMarker(localPlayer.position);
+      }
+    }
   });
 }
 

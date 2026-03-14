@@ -217,6 +217,8 @@ packages/
 
 - **Minimap**: Shows a fixed 2000px-radius viewport centered on the player (not the full world). Background redraws only when player's tile position changes. All minimap coordinate functions take a `centerPos` parameter.
 
+- **World map**: Press M to toggle a full-screen overlay showing the entire 200×200 world. Pre-rendered to an HTML canvas at 3px/tile (600×600px). Shows town name labels and a "YOU" crosshair marker at the player's position. No other players shown. Escape also closes it.
+
 - **Visibility**: Server filters player data per-client — only sends players within `VISIBILITY_RADIUS` (2200px). Combat participants are always included regardless of distance. 200px buffer between data radius and minimap radius prevents pop-in.
 
 - **Player spawn**: Dusthaven's south entry road area (~9950, 4400)

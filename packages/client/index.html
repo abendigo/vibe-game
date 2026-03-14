@@ -273,6 +273,29 @@
       }
       #zoom-controls button:hover { background: #555; }
 
+      /* World map overlay */
+      #world-map-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.85);
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        z-index: 50;
+      }
+      #world-map-overlay.hidden { display: none; }
+      #world-map-canvas {
+        border: 2px solid #666;
+        image-rendering: pixelated;
+      }
+      #world-map-label {
+        color: #aaa;
+        font-family: monospace;
+        font-size: 14px;
+        margin-top: 8px;
+      }
+
       /* Login screen */
       #login-screen {
         position: fixed;
@@ -415,6 +438,10 @@
       <button id="btn-fire-laser">Laser [10]</button>
       <button id="btn-fire-projectile">Gun [20]</button>
       <button id="btn-end-turn">End Turn [Space]</button>
+    </div>
+    <div id="world-map-overlay" class="hidden">
+      <canvas id="world-map-canvas"></canvas>
+      <div id="world-map-label">World Map [M]</div>
     </div>
     <div id="version-display"></div>
     <script type="module" src="/src/main.ts"></script>
