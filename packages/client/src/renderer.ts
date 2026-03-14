@@ -19,6 +19,8 @@ import {
   computeMinimapCombatZone,
   hpBarColor,
   computePlayerStats,
+  LASER_COLOR,
+  PROJECTILE_COLOR,
 } from "./render-utils.js";
 
 // ── Animation types ──
@@ -56,7 +58,7 @@ export class Renderer {
   private targetingGraphics: Graphics;
 
   /** Targeting info for the info panel, updated by updateTargetingLines. */
-  _targetingInfo: { targetName: string; dist: number } | null = null;
+  _targetingInfo: { targetName: string; laserDist: number; projectileDist: number } | null = null;
 
   private static readonly DEFAULT_ZOOM = 1;
   private static readonly MIN_ZOOM = 0.25;
@@ -600,6 +602,14 @@ export class Renderer {
       body.lineTo(CAR_WIDTH / 2 + 8, 0);
       body.stroke({ width: 3, color: 0xffffff });
 
+      // Weapon mount points (front corners)
+      // Laser: left-front (negative Y in local space = left when heading east)
+      body.rect(CAR_WIDTH / 2 - 4, -CAR_HEIGHT / 2 - 1, 5, 3);
+      body.fill(LASER_COLOR);
+      // Projectile: right-front
+      body.rect(CAR_WIDTH / 2 - 4, CAR_HEIGHT / 2 - 2, 5, 3);
+      body.fill(PROJECTILE_COLOR);
+
       container.addChild(body);
 
       // Name label
@@ -708,16 +718,17 @@ export class Renderer {
           ? "hp-orange"
           : "hp-red";
 
-    const targetDist = targetingInfo ? Math.round(targetingInfo.dist) : null;
     const targetName = targetingInfo?.targetName ?? null;
+    const laserDist = targetingInfo ? Math.round(targetingInfo.laserDist) : null;
+    const projDist = targetingInfo ? Math.round(targetingInfo.projectileDist) : null;
 
     // Weapon targeting status helper
-    const weaponStatus = (range: number): string => {
+    const weaponStatus = (range: number, dist: number | null, colorHex: string): string => {
       if (!targetName) return `<span class="label">no target</span>`;
-      if (targetDist !== null && targetDist <= range) {
-        return `<span style="color:#66bb6a">targeting ${targetName} (${targetDist}/${range})</span>`;
+      if (dist !== null && dist <= range) {
+        return `<span style="color:${colorHex}">targeting ${targetName} (${dist}/${range})</span>`;
       }
-      return `<span style="color:#ef5350">${targetName} out of range (${targetDist}/${range})</span>`;
+      return `<span style="color:#ef5350">${targetName} out of range (${dist}/${range})</span>`;
     };
 
     panel.innerHTML =
@@ -727,10 +738,10 @@ export class Renderer {
       `<span class="label">Facing:</span> <span class="value">${s.direction}</span><br>` +
       `<span class="label">Speed:</span> <span class="value">${Math.round(s.currentSpeed)} / ${s.maxSpeed}</span><br>` +
       `<span class="label">Armor:</span> <span class="value">${s.armor}</span><br>` +
-      `<span class="label">Laser:</span> <span class="value">${s.laserDamage} dmg (${s.laserEnergy}/${s.maxLaserEnergy} energy)</span><br>` +
-      `  ${weaponStatus(s.laserRange)}<br>` +
-      `<span class="label">Gun:</span> <span class="value">${s.projectileDamage} dmg (${s.projectileAmmo}/${s.maxProjectileAmmo} ammo)</span><br>` +
-      `  ${weaponStatus(s.projectileRange)}<br>` +
+      `<span style="color:#00ffff">Laser:</span> <span class="value">${s.laserDamage} dmg (${s.laserEnergy}/${s.maxLaserEnergy} energy)</span><br>` +
+      `  ${weaponStatus(s.laserRange, laserDist, "#00ffff")}<br>` +
+      `<span style="color:#ffaa00">Gun:</span> <span class="value">${s.projectileDamage} dmg (${s.projectileAmmo}/${s.maxProjectileAmmo} ammo)</span><br>` +
+      `  ${weaponStatus(s.projectileRange, projDist, "#ffaa00")}<br>` +
       `<span class="label">Parts:</span> <span class="value">${s.partCount}</span><br>` +
       `<span class="label">Skills:</span> <span class="value">DRV ${s.skills.driving} / GUN ${s.skills.gunnery} / LCK ${s.skills.luck}</span><br>` +
       (s.inCombat
@@ -794,7 +805,23 @@ export class Renderer {
     }
   }
 
-  /** Draw targeting lines from vehicles to their computed targets. */
+  /** Compute world-space weapon mount position for a player. */
+  private weaponMountWorld(
+    player: Player,
+    side: "left" | "right"
+  ): Vec2 {
+    const cos = Math.cos(player.velocity.heading);
+    const sin = Math.sin(player.velocity.heading);
+    // Local-space mount: front of car, offset to left or right
+    const lx = CAR_WIDTH / 2 - 2;
+    const ly = side === "left" ? -CAR_HEIGHT / 2 : CAR_HEIGHT / 2;
+    return {
+      x: player.position.x + lx * cos - ly * sin,
+      y: player.position.y + lx * sin + ly * cos,
+    };
+  }
+
+  /** Draw targeting lines from weapon mount points to targets, for all vehicles. */
   updateTargetingLines(
     players: Map<string, Player>,
     computedTargets: Map<string, string>,
@@ -804,7 +831,7 @@ export class Renderer {
     this.targetingGraphics.clear();
     this._targetingInfo = null;
 
-    // Find the local player's effective target (for info panel, even if out of range)
+    // Update info panel targeting info for local player (even if out of range)
     if (this.localPlayerId) {
       const localPlayer = players.get(this.localPlayerId);
       if (localPlayer) {
@@ -813,11 +840,16 @@ export class Renderer {
         if (effTargetId) {
           const effTarget = players.get(effTargetId);
           if (effTarget) {
-            const tdx = effTarget.position.x - localPlayer.position.x;
-            const tdy = effTarget.position.y - localPlayer.position.y;
+            const laserMount = this.weaponMountWorld(localPlayer, "left");
+            const projMount = this.weaponMountWorld(localPlayer, "right");
+            const ldx = effTarget.position.x - laserMount.x;
+            const ldy = effTarget.position.y - laserMount.y;
+            const pdx = effTarget.position.x - projMount.x;
+            const pdy = effTarget.position.y - projMount.y;
             this._targetingInfo = {
               targetName: effTarget.name,
-              dist: Math.sqrt(tdx * tdx + tdy * tdy),
+              laserDist: Math.sqrt(ldx * ldx + ldy * ldy),
+              projectileDist: Math.sqrt(pdx * pdx + pdy * pdy),
             };
           }
         }
@@ -829,65 +861,61 @@ export class Renderer {
       const target = players.get(targetId);
       if (!player || !target) continue;
 
-      // Only draw targeting lines for the local player
-      if (id !== this.localPlayerId) continue;
+      const isLocal = id === this.localPlayerId;
 
-      // Only show if auto-target is enabled or a target is manually selected
-      if (!autoTargetEnabled && !selectedTargetId) continue;
+      // For local player: only show if auto-target enabled or manual selection
+      if (isLocal && !autoTargetEnabled && !selectedTargetId) continue;
 
-      // For local player with manual selection, use that target instead
-      const effectiveTargetId = selectedTargetId ?? targetId;
+      // For local player with manual selection, override target
+      const effectiveTargetId = isLocal && selectedTargetId ? selectedTargetId : targetId;
       const effectiveTarget = players.get(effectiveTargetId);
       if (!effectiveTarget) continue;
 
-      // Check if target is within weapon range
-      const fromX = player.position.x;
-      const fromY = player.position.y;
       const toX = effectiveTarget.position.x;
       const toY = effectiveTarget.position.y;
 
-      const dx = toX - fromX;
-      const dy = toY - fromY;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist < 1) continue;
+      const lineAlpha = isLocal ? 0.5 : 0.2;
+      const lineWidth = isLocal ? 1.5 : 1;
+      let drewAnyLine = false;
 
-      // Get max weapon range for this player
-      const maxRange = Math.max(
-        ...player.car.parts
-          .filter((p) => p.stats.weaponKind)
-          .map((p) => p.stats.range ?? 0),
-        0
-      );
-      if (dist > maxRange) continue;
+      // Draw per-weapon targeting lines from mount points
+      for (const part of player.car.parts) {
+        if (!part.stats.weaponKind) continue;
+        const isLaser = part.stats.weaponKind === WeaponKind.Laser;
+        const mount = this.weaponMountWorld(player, isLaser ? "left" : "right");
+        const range = part.stats.range ?? 0;
+        const color = isLaser ? LASER_COLOR : PROJECTILE_COLOR;
 
-      // Draw dashed line
-      const dashLen = 8;
-      const gapLen = 6;
-      const nx = dx / dist;
-      const ny = dy / dist;
-      let d = 0;
-      const color = 0x4fc3f7;
-      const alpha = 0.5;
+        const dx = toX - mount.x;
+        const dy = toY - mount.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < 1 || dist > range) continue;
 
-      while (d < dist) {
-        const segEnd = Math.min(d + dashLen, dist);
-        this.targetingGraphics.moveTo(fromX + nx * d, fromY + ny * d);
-        this.targetingGraphics.lineTo(fromX + nx * segEnd, fromY + ny * segEnd);
-        d = segEnd + gapLen;
+        // Dashed line from mount to target
+        const nx = dx / dist;
+        const ny = dy / dist;
+        let d = 0;
+        while (d < dist) {
+          const segEnd = Math.min(d + 8, dist);
+          this.targetingGraphics.moveTo(mount.x + nx * d, mount.y + ny * d);
+          this.targetingGraphics.lineTo(mount.x + nx * segEnd, mount.y + ny * segEnd);
+          d = segEnd + 6;
+        }
+        this.targetingGraphics.stroke({ width: lineWidth, color, alpha: lineAlpha });
+        drewAnyLine = true;
       }
-      this.targetingGraphics.stroke({ width: 1.5, color, alpha });
 
-      // Small crosshair on target
-      const cx = effectiveTarget.position.x;
-      const cy = effectiveTarget.position.y;
-      const s = 8;
-      this.targetingGraphics.moveTo(cx - s, cy);
-      this.targetingGraphics.lineTo(cx + s, cy);
-      this.targetingGraphics.moveTo(cx, cy - s);
-      this.targetingGraphics.lineTo(cx, cy + s);
-      this.targetingGraphics.stroke({ width: 1.5, color: 0x4fc3f7, alpha: 0.7 });
-      this.targetingGraphics.circle(cx, cy, 12);
-      this.targetingGraphics.stroke({ width: 1, color: 0x4fc3f7, alpha: 0.4 });
+      // Crosshair on target (if any line was drawn)
+      if (drewAnyLine && isLocal) {
+        const s = 8;
+        this.targetingGraphics.moveTo(toX - s, toY);
+        this.targetingGraphics.lineTo(toX + s, toY);
+        this.targetingGraphics.moveTo(toX, toY - s);
+        this.targetingGraphics.lineTo(toX, toY + s);
+        this.targetingGraphics.stroke({ width: 1.5, color: 0xffffff, alpha: 0.7 });
+        this.targetingGraphics.circle(toX, toY, 12);
+        this.targetingGraphics.stroke({ width: 1, color: 0xffffff, alpha: 0.4 });
+      }
     }
   }
 

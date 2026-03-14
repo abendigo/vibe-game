@@ -15,6 +15,10 @@ export const CAR_WIDTH = 30;
 export const CAR_HEIGHT = 20;
 export const PLAYER_COLORS = [0x4fc3f7, 0xef5350, 0x66bb6a, 0xffa726, 0xab47bc, 0xffee58];
 
+// Weapon mount colors
+export const LASER_COLOR = 0x00ffff;    // cyan
+export const PROJECTILE_COLOR = 0xffaa00; // orange
+
 // ── Pure functions ──
 
 export function screenToWorld(
