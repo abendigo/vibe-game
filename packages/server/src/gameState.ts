@@ -524,6 +524,14 @@ export class GameStateManager {
   }
 
   endCombat(): void {
+    // Clear weapon cooldowns for all players (cooldowns are combat-only)
+    for (const [, player] of this.state.players) {
+      for (const part of player.car.parts) {
+        if (part.type === CarPartType.Weapon && (part.stats.cooldown ?? 0) > 0) {
+          part.stats.cooldown = 0;
+        }
+      }
+    }
     this.state.combatZone = undefined;
     this.state.phase = GamePhase.Exploring;
     this.state.turnOrder = undefined;
@@ -705,13 +713,15 @@ export class GameStateManager {
       }
     }
 
-    // Consume resource and start cooldown
+    // Consume resource; only set cooldown in combat
     if (kind === WeaponKind.Laser) {
       weapon.stats.energy = (weapon.stats.energy ?? 1) - 1;
     } else {
       weapon.stats.ammo = (weapon.stats.ammo ?? 1) - 1;
     }
-    weapon.stats.cooldown = weapon.stats.maxCooldown ?? 0;
+    if (this.state.combatZone) {
+      weapon.stats.cooldown = weapon.stats.maxCooldown ?? 0;
+    }
 
     // No target — fire into the void
     if (!targetId) {
