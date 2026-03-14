@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Admin - Vehicular RPG</title>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      body {
+        background: #111;
+        color: #ccc;
+        font-family: monospace;
+        font-size: 13px;
+        display: flex;
+        height: 100vh;
+        overflow: hidden;
+      }
+      #sidebar {
+        width: 320px;
+        min-width: 320px;
+        background: #1a1a1a;
+        border-right: 1px solid #333;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+      #sidebar-header {
+        padding: 16px;
+        border-bottom: 1px solid #333;
+      }
+      #sidebar-header h1 {
+        font-size: 16px;
+        color: #4fc3f7;
+        font-weight: normal;
+        margin-bottom: 4px;
+      }
+      #sidebar-header .meta {
+        font-size: 11px;
+        color: #666;
+      }
+      #status-bar {
+        padding: 10px 16px;
+        border-bottom: 1px solid #333;
+        display: flex;
+        gap: 16px;
+        font-size: 11px;
+        color: #888;
+      }
+      #status-bar .val { color: #fff; }
+      #player-list {
+        flex: 1;
+        overflow-y: auto;
+        padding: 8px 0;
+      }
+      .player-entry {
+        padding: 8px 16px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        border-bottom: 1px solid #222;
+        cursor: default;
+      }
+      .player-entry:hover { background: rgba(255,255,255,0.03); }
+      .player-entry .dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        flex-shrink: 0;
+      }
+      .player-entry .name { flex: 1; color: #fff; }
+      .player-entry .name.npc { color: #ffa726; }
+      .player-entry .tag {
+        font-size: 10px;
+        padding: 1px 5px;
+        border-radius: 3px;
+        color: #111;
+        font-weight: bold;
+      }
+      .tag-npc { background: #ffa726; }
+      .tag-combat { background: #ef5350; }
+      .player-entry .details {
+        font-size: 10px;
+        color: #666;
+        white-space: nowrap;
+      }
+
+      #map-area {
+        flex: 1;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        position: relative;
+        overflow: hidden;
+      }
+      #map-canvas {
+        image-rendering: pixelated;
+        border: 1px solid #333;
+      }
+      #map-tooltip {
+        position: absolute;
+        pointer-events: none;
+        background: rgba(0,0,0,0.85);
+        color: #fff;
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-size: 11px;
+        display: none;
+        white-space: nowrap;
+        z-index: 10;
+      }
+      #refresh-indicator {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        font-size: 10px;
+        color: #555;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="sidebar">
+      <div id="sidebar-header">
+        <h1>Admin Panel</h1>
+        <div class="meta">Vehicular RPG Server</div>
+      </div>
+      <div id="status-bar">
+        <span>Phase: <span class="val" id="s-phase">--</span></span>
+        <span>Players: <span class="val" id="s-players">0</span></span>
+        <span>Clients: <span class="val" id="s-clients">0</span></span>
+      </div>
+      <div id="player-list"></div>
+    </div>
+    <div id="map-area">
+      <canvas id="map-canvas"></canvas>
+      <div id="map-tooltip"></div>
+      <div id="refresh-indicator">updating...</div>
+    </div>
+
+    <script>
+      // ── Constants (mirrored from shared) ──
+      const MAP_TILES = 200;
+      const TILE_SIZE = 100;
+      const MAP_SIZE = MAP_TILES * TILE_SIZE; // 20000
+      const TPX = 3; // pixels per tile on map canvas
+      const CANVAS_SIZE = MAP_TILES * TPX; // 600
+
+      const TILE_GRASS = 0;
+      const TILE_ROAD = 1;
+      const TILE_BUILDING = 2;
+
+      // ── Map tile data (fetched once from the game client's shared module) ──
+      // We'll render tiles by fetching the world map data from a dedicated endpoint,
+      // but since the server doesn't expose raw tile data, we'll render it client-side
+      // using the same algorithm as the game client's preRenderWorldMap.
+      // For simplicity, we'll import the tile data via a small inline module.
+
+      const canvas = document.getElementById("map-canvas");
+      const ctx = canvas.getContext("2d");
+      canvas.width = CANVAS_SIZE;
+      canvas.height = CANVAS_SIZE;
+
+      // Scale canvas to fit the map area nicely
+      function fitCanvas() {
+        const area = document.getElementById("map-area");
+        const maxW = area.clientWidth - 40;
+        const maxH = area.clientHeight - 40;
+        const scale = Math.min(maxW / CANVAS_SIZE, maxH / CANVAS_SIZE, 2);
+        canvas.style.width = (CANVAS_SIZE * scale) + "px";
+        canvas.style.height = (CANVAS_SIZE * scale) + "px";
+      }
+      window.addEventListener("resize", fitCanvas);
+
+      let baseImage = null;
+      let lastPlayers = [];
+
+      // ── Render base map tiles ──
+      // We use the admin/tiles endpoint for tile data
+      async function fetchAndRenderTiles() {
+        try {
+          const res = await fetch("/api/admin/tiles");
+          if (!res.ok) throw new Error("No tiles endpoint");
+          const data = await res.json();
+          renderTilesFromData(data.tiles, data.buildings);
+        } catch {
+          // Fallback: render a blank map with placeholder
+          renderFallbackMap();
+        }
+      }
+
+      function renderTilesFromData(tiles, buildings) {
+        // Build building color lookup
+        const bColorMap = new Map();
+        for (const b of buildings) {
+          for (let r = b.y; r < b.y + b.height; r++) {
+            for (let c = b.x; c < b.x + b.width; c++) {
+              bColorMap.set(r + "," + c, b.color);
+            }
+          }
+        }
+
+        for (let row = 0; row < MAP_TILES; row++) {
+          for (let col = 0; col < MAP_TILES; col++) {
+            const tile = tiles[row][col];
+            if (tile === TILE_ROAD) {
+              ctx.fillStyle = "#555555";
+            } else if (tile === TILE_BUILDING) {
+              const bc = bColorMap.get(row + "," + col);
+              ctx.fillStyle = bc ? "#" + bc.toString(16).padStart(6, "0") : "#6a4a3a";
+            } else {
+              ctx.fillStyle = "#2a4a2e";
+            }
+            ctx.fillRect(col * TPX, row * TPX, TPX, TPX);
+          }
+        }
+
+        // Town labels
+        const towns = [
+          { name: "Dusthaven", tx: 80, ty: 10 },
+          { name: "Ironworks", tx: 20, ty: 120 },
+          { name: "Oasis", tx: 140, ty: 120 },
+        ];
+        ctx.font = "bold 14px monospace";
+        ctx.textAlign = "center";
+        for (const t of towns) {
+          const cx = (t.tx + 20) * TPX;
+          const cy = (t.ty + 20) * TPX;
+          ctx.strokeStyle = "#000";
+          ctx.lineWidth = 3;
+          ctx.strokeText(t.name, cx, cy);
+          ctx.fillStyle = "#fff";
+          ctx.fillText(t.name, cx, cy);
+        }
+
+        baseImage = ctx.getImageData(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+      }
+
+      function renderFallbackMap() {
+        // Simple green background with labels
+        ctx.fillStyle = "#2a4a2e";
+        ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+
+        ctx.font = "bold 14px monospace";
+        ctx.textAlign = "center";
+        ctx.fillStyle = "#666";
+        ctx.fillText("Loading map tiles...", CANVAS_SIZE / 2, CANVAS_SIZE / 2);
+
+        baseImage = ctx.getImageData(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+      }
+
+      // ── Render player markers on map ──
+      const PLAYER_COLORS = [
+        "#4fc3f7", "#66bb6a", "#ffa726", "#ef5350",
+        "#ab47bc", "#ffee58", "#26c6da", "#ec407a",
+      ];
+      const colorAssign = new Map();
+      let colorIdx = 0;
+
+      function getColor(id, isNPC) {
+        if (isNPC) return "#ffa726";
+        if (!colorAssign.has(id)) {
+          colorAssign.set(id, PLAYER_COLORS[colorIdx % PLAYER_COLORS.length]);
+          colorIdx++;
+        }
+        return colorAssign.get(id);
+      }
+
+      function worldToMap(wx, wy) {
+        return {
+          x: (wx / TILE_SIZE) * TPX,
+          y: (wy / TILE_SIZE) * TPX,
+        };
+      }
+
+      function renderPlayers(players) {
+        if (!baseImage) return;
+        ctx.putImageData(baseImage, 0, 0);
+
+        for (const p of players) {
+          const { x, y } = worldToMap(p.position.x, p.position.y);
+          const color = getColor(p.id, p.isNPC);
+
+          // Direction indicator (line from center in heading direction)
+          const len = 8;
+          const dx = Math.cos(p.heading) * len;
+          const dy = Math.sin(p.heading) * len;
+          ctx.beginPath();
+          ctx.moveTo(x, y);
+          ctx.lineTo(x + dx, y + dy);
+          ctx.strokeStyle = color;
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+
+          // Dot
+          ctx.beginPath();
+          ctx.arc(x, y, p.isNPC ? 3 : 4, 0, Math.PI * 2);
+          ctx.fillStyle = color;
+          ctx.fill();
+
+          if (p.inCombat) {
+            ctx.beginPath();
+            ctx.arc(x, y, 6, 0, Math.PI * 2);
+            ctx.strokeStyle = "#ef5350";
+            ctx.lineWidth = 1;
+            ctx.stroke();
+          }
+
+          // Name label
+          ctx.font = "9px monospace";
+          ctx.textAlign = "center";
+          ctx.fillStyle = color;
+          ctx.fillText(p.name, x, y - 7);
+        }
+
+        // Combat zone
+        if (lastCombatZone) {
+          const c = worldToMap(lastCombatZone.center.x, lastCombatZone.center.y);
+          const r = (lastCombatZone.radius / TILE_SIZE) * TPX;
+          ctx.beginPath();
+          ctx.arc(c.x, c.y, r, 0, Math.PI * 2);
+          ctx.strokeStyle = "rgba(239, 83, 80, 0.6)";
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+          ctx.fillStyle = "rgba(239, 83, 80, 0.08)";
+          ctx.fill();
+        }
+      }
+
+      // ── Player list ──
+      function renderPlayerList(players) {
+        const list = document.getElementById("player-list");
+        const npcs = players.filter(p => p.isNPC).sort((a, b) => a.name.localeCompare(b.name));
+        const humans = players.filter(p => !p.isNPC).sort((a, b) => a.name.localeCompare(b.name));
+        const sorted = [...humans, ...npcs];
+
+        list.innerHTML = sorted.map(p => {
+          const color = getColor(p.id, p.isNPC);
+          const posStr = `${Math.round(p.position.x)}, ${Math.round(p.position.y)}`;
+          const speedStr = p.speed > 0 ? ` spd:${p.speed}` : "";
+          const tags = [];
+          if (p.isNPC) tags.push('<span class="tag tag-npc">NPC</span>');
+          if (p.inCombat) tags.push('<span class="tag tag-combat">COMBAT</span>');
+          return `<div class="player-entry" data-id="${p.id}">
+            <div class="dot" style="background:${color}"></div>
+            <span class="name ${p.isNPC ? 'npc' : ''}">${p.name}</span>
+            ${tags.join("")}
+            <span class="details">${posStr}${speedStr} HP:${p.hp}</span>
+          </div>`;
+        }).join("");
+      }
+
+      // ── Tooltip on hover ──
+      let lastCombatZone = null;
+
+      canvas.addEventListener("mousemove", (e) => {
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = CANVAS_SIZE / rect.width;
+        const scaleY = CANVAS_SIZE / rect.height;
+        const mx = (e.clientX - rect.left) * scaleX;
+        const my = (e.clientY - rect.top) * scaleY;
+
+        // Find nearest player within threshold
+        let nearest = null;
+        let minDist = 15; // pixels on canvas
+        for (const p of lastPlayers) {
+          const { x, y } = worldToMap(p.position.x, p.position.y);
+          const d = Math.sqrt((x - mx) ** 2 + (y - my) ** 2);
+          if (d < minDist) {
+            minDist = d;
+            nearest = p;
+          }
+        }
+
+        const tooltip = document.getElementById("map-tooltip");
+        if (nearest) {
+          const posStr = `(${Math.round(nearest.position.x)}, ${Math.round(nearest.position.y)})`;
+          tooltip.textContent = `${nearest.name} ${posStr} HP:${nearest.hp} SPD:${nearest.speed}`;
+          tooltip.style.display = "block";
+          tooltip.style.left = (e.clientX - document.getElementById("sidebar").clientWidth + 12) + "px";
+          tooltip.style.top = (e.clientY - 30) + "px";
+        } else {
+          tooltip.style.display = "none";
+        }
+      });
+
+      canvas.addEventListener("mouseleave", () => {
+        document.getElementById("map-tooltip").style.display = "none";
+      });
+
+      // ── Polling ──
+      const indicator = document.getElementById("refresh-indicator");
+
+      async function poll() {
+        try {
+          const res = await fetch("/api/admin/state");
+          if (!res.ok) throw new Error(res.statusText);
+          const data = await res.json();
+
+          lastPlayers = data.players;
+          lastCombatZone = data.combatZone;
+
+          document.getElementById("s-phase").textContent = data.phase;
+          document.getElementById("s-players").textContent = data.players.length;
+          document.getElementById("s-clients").textContent = data.connectedClients;
+
+          renderPlayers(data.players);
+          renderPlayerList(data.players);
+
+          indicator.textContent = "last update: " + new Date().toLocaleTimeString();
+        } catch (err) {
+          indicator.textContent = "error: " + err.message;
+        }
+      }
+
+      // ── Init ──
+      async function init() {
+        fitCanvas();
+        renderFallbackMap(); // show placeholder immediately
+        await fetchAndRenderTiles();
+        await poll();
+        setInterval(poll, 1000);
+      }
+
+      init();
+    </script>
+  </body>
+</html>

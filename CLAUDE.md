@@ -25,6 +25,8 @@ packages/
     auth.ts         — password hashing (scrypt), session token management
   server/data/
     gamestate.json  — save file (gitignored)
+  client/
+    admin.html      — standalone admin page (no auth, full world map + player list)
   client/src/
     main.ts         — Pixi.js v8 init, WebSocket connection, game bootstrap
     renderer.ts     — Pixi.js rendering (grid, cars, camera follow, combat UI)
@@ -91,6 +93,16 @@ packages/
 - **Git discipline**: Before making any code changes, check `git status` for uncommitted changes. If there are any, stop and tell the user — do not proceed. After completing changes, create a git commit with a descriptive message explaining what was done.
 
 - **Always run E2E tests**: After every change, run `npm run test:e2e` in addition to `npm test`. E2E tests use Playwright to verify the full login flow, movement, and combat through a real browser. Both must pass before committing.
+
+## Admin Page
+
+- **URL**: `/admin.html` (standalone HTML page, no framework dependencies)
+- **No auth**: Currently unprotected — future work to restrict to authorized users
+- **API endpoints**:
+  - `GET /api/admin/state` — returns all players (unfiltered, no visibility radius), phase, combat zone, connected client count. Polled every 1 second.
+  - `GET /api/admin/tiles` — returns full 200×200 tile grid + building definitions. Cached with 24h Cache-Control. Fetched once on page load.
+- **Features**: Full world map canvas (3px/tile, 600×600px) with player/NPC markers, direction indicators, name labels, combat zone circle. Sidebar lists all players/NPCs with position, speed, HP. Tooltip on hover over map markers.
+- **Vite multi-page**: `admin.html` is a separate Rollup input in `vite.config.ts`. Vite dev proxy forwards `/api` to `localhost:3001`.
 
 ## Conventions
 - TypeScript strict mode everywhere

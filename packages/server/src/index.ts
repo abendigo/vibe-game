@@ -37,6 +37,9 @@ let credentials: Record<string, StoredCredentials> = {};
 // Map WebSocket -> player ID
 const clients = new Map<WebSocket, string>();
 
+// Cached JSON for tiles endpoint (static data, computed once)
+let cachedTilesJson: string | null = null;
+
 // ── Helpers ──
 
 function send(ws: WebSocket, msg: ServerMessage): void {
@@ -126,6 +129,62 @@ const httpServer = createServer(async (req, res) => {
       status: "ok",
       players: gameState.state.players.size,
       phase: gameState.state.phase,
+    }));
+    return;
+  }
+
+  // Admin tiles endpoint — serves static tile + building data for map rendering
+  if (url === "/api/admin/tiles") {
+    // Cache tiles forever — they never change at runtime
+    if (!cachedTilesJson) {
+      cachedTilesJson = JSON.stringify({
+        tiles: WORLD_MAP.tiles,
+        buildings: WORLD_MAP.buildings,
+      });
+    }
+    res.writeHead(200, {
+      "Content-Type": "application/json",
+      "Cache-Control": "public, max-age=86400",
+    });
+    res.end(cachedTilesJson);
+    return;
+  }
+
+  // Admin state endpoint — returns all players unfiltered
+  if (url === "/api/admin/state") {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    const state = gameState.state;
+    const players: Array<{
+      id: string;
+      name: string;
+      position: { x: number; y: number };
+      rotation: number;
+      speed: number;
+      heading: number;
+      hp: number;
+      maxHp: number;
+      isNPC: boolean;
+      inCombat: boolean;
+    }> = [];
+    for (const [id, p] of state.players) {
+      players.push({
+        id,
+        name: p.name,
+        position: p.position,
+        rotation: p.rotation,
+        speed: p.velocity.speed,
+        heading: p.velocity.heading,
+        hp: p.car.baseHealth,
+        maxHp: 100,
+        isNPC: p.isNPC ?? false,
+        inCombat: state.combatZone?.combatantIds.includes(id) ?? false,
+      });
+    }
+    res.end(JSON.stringify({
+      players,
+      phase: state.phase,
+      combatZone: state.combatZone ?? null,
+      connectedClients: clients.size,
     }));
     return;
   }
