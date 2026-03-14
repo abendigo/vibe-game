@@ -792,8 +792,11 @@ export class Renderer {
 
       const isLocal = id === this.localPlayerId;
 
-      // For local player: only show if auto-target is enabled or a target is manually selected
-      if (isLocal && !autoTargetEnabled && !selectedTargetId) continue;
+      // Only draw targeting lines for the local player
+      if (!isLocal) continue;
+
+      // Only show if auto-target is enabled or a target is manually selected
+      if (!autoTargetEnabled && !selectedTargetId) continue;
 
       // For local player with manual selection, use that target instead
       const effectiveTargetId = isLocal && selectedTargetId ? selectedTargetId : targetId;
@@ -826,8 +829,8 @@ export class Renderer {
       const nx = dx / dist;
       const ny = dy / dist;
       let d = 0;
-      const color = isLocal ? 0x4fc3f7 : 0xff8888;
-      const alpha = isLocal ? 0.5 : 0.2;
+      const color = 0x4fc3f7;
+      const alpha = 0.5;
 
       while (d < dist) {
         const segEnd = Math.min(d + dashLen, dist);
@@ -835,21 +838,19 @@ export class Renderer {
         this.targetingGraphics.lineTo(fromX + nx * segEnd, fromY + ny * segEnd);
         d = segEnd + gapLen;
       }
-      this.targetingGraphics.stroke({ width: isLocal ? 1.5 : 1, color, alpha });
+      this.targetingGraphics.stroke({ width: 1.5, color, alpha });
 
-      // Small crosshair on target for local player
-      if (isLocal) {
-        const cx = effectiveTarget.position.x;
-        const cy = effectiveTarget.position.y;
-        const s = 8;
-        this.targetingGraphics.moveTo(cx - s, cy);
-        this.targetingGraphics.lineTo(cx + s, cy);
-        this.targetingGraphics.moveTo(cx, cy - s);
-        this.targetingGraphics.lineTo(cx, cy + s);
-        this.targetingGraphics.stroke({ width: 1.5, color: 0x4fc3f7, alpha: 0.7 });
-        this.targetingGraphics.circle(cx, cy, 12);
-        this.targetingGraphics.stroke({ width: 1, color: 0x4fc3f7, alpha: 0.4 });
-      }
+      // Small crosshair on target
+      const cx = effectiveTarget.position.x;
+      const cy = effectiveTarget.position.y;
+      const s = 8;
+      this.targetingGraphics.moveTo(cx - s, cy);
+      this.targetingGraphics.lineTo(cx + s, cy);
+      this.targetingGraphics.moveTo(cx, cy - s);
+      this.targetingGraphics.lineTo(cx, cy + s);
+      this.targetingGraphics.stroke({ width: 1.5, color: 0x4fc3f7, alpha: 0.7 });
+      this.targetingGraphics.circle(cx, cy, 12);
+      this.targetingGraphics.stroke({ width: 1, color: 0x4fc3f7, alpha: 0.4 });
     }
   }
 
